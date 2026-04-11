@@ -44,7 +44,7 @@ Prerequisites: `Node.js`, `Rust (cargo)`, and Tauri dependencies (`webkit2gtk4.1
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Sandeep87p/Lume.git
+git clone https://github.com/sandeep4513m/Lume.git
 cd lume
 ```
 2. Install npm dependencies:
