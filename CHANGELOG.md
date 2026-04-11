@@ -2,6 +2,24 @@
 
 All notable changes to Lume are documented in this file.
 
+## [0.4.0] — 2026-04-11
+
+### Added
+- **UI Interactivity Suite (Phase 1):**
+  - **Edit User Message**: Inline editing drops subsequent conversation context to fork a new prompt natively with Svelte updates.
+  - **Regenerate Response**: Single-click recreation of AI answers dynamically without reloading.
+  - **Stop Generation**: Immediate stream halt functionality with an accessible "Stop" button.
+  - **Copy to Clipboard Button**: Hover-visible messaging tool.
+  - **Thinking Process Component**: Intercepts native model `<think>` blocks and neatly tucks them into a toggleable dropdown interface.
+  - **Metadata Analytics**: Displays "Answered in X.Xs" and total token counts below each message.
+- **Streaming Preferences**: Headless support via `lume_streaming` local storage identifier for easy toggle between buffer and chunk retrieval. 
+
+### Changed
+- SQLite Database upgraded to return explicit UUIDs and timestamps dynamically via API mappings in `db.rs` ensuring robust edit capability.
+- Implemented `delete_message` and `delete_messages_after` in the Rust API backend to complement the message branching schema. 
+
+---
+
 ## [0.3.0] — 2026-04-11
 
 ### Added

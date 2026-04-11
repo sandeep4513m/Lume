@@ -19,7 +19,9 @@ pub fn run() {
             db::delete_session,
             db::save_message,
             db::get_messages,
-            db::clear_messages
+            db::clear_messages,
+            db::delete_message,
+            db::delete_messages_after
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

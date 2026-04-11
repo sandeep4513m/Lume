@@ -6,7 +6,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue)
-![Version](https://img.shields.io/badge/Version-0.3.0-green)
+![Version](https://img.shields.io/badge/Version-0.4.0-green)
 
 ---
 
@@ -26,7 +26,13 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 - **Dark / Light Mode** — Native system-preference detection with manual toggle
 - **Markdown & Syntax Highlighting** — Full GFM rendering with `highlight.js` code blocks
 - **Scroll-to-Bottom FAB** — Floating action button with unread badge and bounce animation
-- **Auto-Resizing Input** — Textarea grows with your message, up to 200px
+### Interaction & Details
+- **Thinking Process Parsing** — Natively extracts `<think>` reasoning metadata and renders inline as a collapsible component (for DeepSeek/Gemma reasoning models).
+- **Edit & Regenerate** — Modify previous prompts to branch out chats, or easily regenerate an AI output with one click.
+- **Stop Generation** — Mid-stream capability to instantly abort API outputs, saving CPU tokens.
+- **Copy Message** — One-click text copying to your system clipboard.
+- **Model Analytics** — Subtly displays Generation Time (seconds) and Token Count underneath model responses.
+
 
 ### Performance
 - **~5 MB** binary size
@@ -69,7 +75,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 ### Pre-built RPM (Fedora)
 ```bash
-sudo dnf install ./lume-0.3.0-1.x86_64.rpm
+sudo dnf install ./lume-0.4.0-1.x86_64.rpm
 ```
 
 ### From Source

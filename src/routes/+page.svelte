@@ -10,6 +10,10 @@
   let messages = $state([]); 
   let isLoading = $state(false);
   let errorMessage = $state('');
+  let copiedIndex = $state(-1);
+  
+  let currentAbortController = $state(null);
+  let isStreamingEnabled = $state(true);
 
   // Sidebar Multi-Session State
   let sessions = $state([]);
@@ -104,6 +108,9 @@
       document.body.classList.add('dark');
     }
 
+    const savedStreaming = localStorage.getItem('lume_streaming');
+    if (savedStreaming !== null) isStreamingEnabled = savedStreaming === 'true';
+
     await loadSessions();
 
     const fetchedModels = await fetchModels();
@@ -142,6 +149,9 @@
   async function handleSend() {
     if (!prompt.trim() || !selectedModel || isLoading || !currentSessionId) return;
     
+    currentAbortController = new AbortController();
+    const startTime = Date.now();
+    
     const currentPrompt = prompt;
     prompt = '';
     tick().then(() => {
@@ -153,44 +163,112 @@
     errorMessage = '';
     
     messages.push({ role: 'user', content: currentPrompt });
+    const userMsgIndex = messages.length - 1;
     
     invoke('save_message', { sessionId: currentSessionId, role: 'user', content: currentPrompt })
-      .then(() => loadSessions(currentSessionId))
+      .then((id) => {
+         messages[userMsgIndex].id = id;
+         messages[userMsgIndex].created_at = Date.now() / 1000;
+         loadSessions(currentSessionId);
+      })
       .catch(console.error);
     
-    // Add placeholder AI message with loading state
     const aiIndex = messages.length;
     messages.push({ role: 'ai', content: '', isLoading: true });
-    messages = messages; // trigger reactivity
+    messages = messages; 
     if (showScrollButton) hasUnread = true;
     
     try {
-      const finalText = await sendMessage(selectedModel, currentPrompt, (streamedText) => {
-        // On each token: update the message content and force Svelte reactivity
-        messages[aiIndex] = { role: 'ai', content: streamedText, isLoading: false };
-        messages = messages; // reassign to trigger $state reactivity
-        
-        // Auto-scroll while streaming (if user hasn't scrolled up)
-        if (!showScrollButton) {
-          setTimeout(scrollToBottom, 10);
-        }
-      });
+      const { text: finalText, evalCount } = await sendMessage(
+        selectedModel, 
+        currentPrompt, 
+        isStreamingEnabled ? (streamedText) => {
+          messages[aiIndex] = { role: 'ai', content: streamedText, isLoading: false };
+          messages = messages; 
+          if (!showScrollButton) setTimeout(scrollToBottom, 10);
+        } : null,
+        currentAbortController.signal
+      );
       
-      // Ensure final state is clean
-      messages[aiIndex] = { role: 'ai', content: finalText, isLoading: false };
+      const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      
+      messages[aiIndex] = { role: 'ai', content: finalText, isLoading: false, evalCount, responseTime };
       messages = messages;
       
       invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: finalText })
-        .then(() => loadSessions(currentSessionId))
+        .then((id) => {
+           messages[aiIndex].id = id;
+           messages[aiIndex].created_at = Date.now() / 1000;
+           loadSessions(currentSessionId);
+        })
         .catch(console.error);
     } catch (error) {
-      errorMessage = "Error communicating with Ollama: " + error.message;
-      // Remove the failed AI message
-      messages = messages.filter((_, i) => i !== aiIndex);
-      prompt = currentPrompt;
-      tick().then(adjustTextareaHeight);
+      if (error.name === 'AbortError') {
+        const partialText = messages[aiIndex].content;
+        messages[aiIndex].isLoading = false;
+        messages = messages;
+        if (partialText) {
+            invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: partialText });
+        } else {
+            messages = messages.filter((_, i) => i !== aiIndex);
+        }
+      } else {
+        errorMessage = "Error communicating with Ollama: " + error.message;
+        messages = messages.filter((_, i) => i !== aiIndex);
+        prompt = currentPrompt;
+        tick().then(adjustTextareaHeight);
+      }
     } finally {
       isLoading = false;
+      currentAbortController = null;
+    }
+  }
+
+  function handleStop() {
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
+  }
+
+  function handleCopy(text, i) {
+    navigator.clipboard.writeText(text);
+    copiedIndex = i;
+    setTimeout(() => copiedIndex = -1, 2000);
+  }
+
+  async function handleEdit(msg) {
+    if (!msg.id || isLoading) return;
+    prompt = msg.content;
+    const msgId = msg.id;
+    const timestamp = msg.created_at;
+    
+    try {
+      await invoke('delete_messages_after', { sessionId: currentSessionId, timestamp });
+      const idx = messages.findIndex(m => m.id === msgId);
+      if (idx !== -1) {
+        messages = messages.slice(0, idx);
+      }
+      tick().then(adjustTextareaHeight);
+    } catch (e) {
+      errorMessage = "Failed to edit: " + e;
+    }
+  }
+
+  async function handleRegenerate(msg, idx) {
+    if (!msg.id || isLoading) return;
+    
+    const promptMsg = messages[idx - 1];
+    if (!promptMsg || promptMsg.role !== 'user') return;
+    
+    prompt = promptMsg.content;
+    
+    try {
+      await invoke('delete_message', { messageId: msg.id });
+      messages = messages.filter(m => m.id !== msg.id);
+      await handleSend();
+    } catch (e) {
+      errorMessage = "Failed to regenerate: " + e;
     }
   }
 
@@ -362,13 +440,37 @@
           </div>
         {/if}
 
-        {#each messages as msg}
-          <div class="flex w-full {msg.role === 'user' ? 'justify-end' : 'justify-start'}">
-            <div class="rounded-2xl max-w-[85%] shadow-sm text-[15px] leading-relaxed overflow-hidden transition-colors
+        {#each messages as msg, i}
+          <div class="flex w-full {msg.role === 'user' ? 'justify-end' : 'justify-start'} group">
+            
+            {#if msg.role === 'user' && !isLoading}
+              <!-- Edit Button for User -->
+              <button onclick={() => handleEdit(msg)} class="mr-2 mt-2 p-1.5 h-8 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl text-gray-400 hover:text-emerald-500 bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700" title="Edit Message">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              </button>
+            {/if}
+
+            <div class="rounded-2xl max-w-[85%] shadow-sm text-[15px] leading-relaxed overflow-hidden transition-colors relative
               {msg.role === 'user' 
-                ? 'bg-emerald-500 text-white rounded-br-none p-4' 
-                : 'bg-[#f9fafb] dark:bg-[#161b22] border border-gray-200 dark:border-gray-800 rounded-bl-none px-5 py-4'}">
+                ? 'bg-emerald-500 text-white rounded-br-none px-5 py-3.5' 
+                : 'bg-[#f9fafb] dark:bg-[#161b22] border border-gray-200 dark:border-gray-800 rounded-bl-none px-6 py-5'}">
               
+              {#if msg.role === 'ai' && !msg.isLoading}
+                <!-- AI Utilities: Copy & Regenerate -->
+                <div class="absolute top-3 right-3 flex items-center space-x-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onclick={() => handleCopy(msg.content, i)} class="p-1.5 bg-white/80 dark:bg-gray-800/80 rounded-md backdrop-blur-sm border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 shadow-sm" title="Copy Message">
+                    {#if copiedIndex === i}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    {:else}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    {/if}
+                  </button>
+                  <button onclick={() => handleRegenerate(msg, i)} class="p-1.5 bg-white/80 dark:bg-gray-800/80 rounded-md backdrop-blur-sm border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-emerald-500 shadow-sm" title="Regenerate Response">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                  </button>
+                </div>
+              {/if}
+
               {#if msg.isLoading}
                 <div class="flex space-x-1.5 items-center h-5">
                   <div class="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce"></div>
@@ -376,7 +478,38 @@
                   <div class="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
                 </div>
               {:else if msg.role === 'ai'}
-                <Markdown content={msg.content} />
+                
+                <!-- Thinking Block parsing -->
+                {#if msg.content.includes('<think>')}
+                  {@const parts = msg.content.split('</think>')}
+                  {@const thinkPart = parts[0].replace('<think>', '').trim()}
+                  {@const restPart = parts[1] || ''}
+                  
+                  <details class="mb-4 border border-gray-200 dark:border-[#2a303c] rounded-xl bg-gray-50 dark:bg-[#111822]/50 overflow-hidden">
+                    <summary class="cursor-pointer px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors select-none flex items-center space-x-2 bg-white/50 dark:bg-[#0d1117]/30">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+                      <span>Thinking Process</span>
+                    </summary>
+                    <div class="px-4 pb-4 pt-2 text-[14px] text-gray-600 dark:text-gray-400 whitespace-pre-wrap border-t border-gray-200 dark:border-[#2a303c]">
+                      {thinkPart}
+                    </div>
+                  </details>
+                  
+                  {#if restPart.trim()}
+                    <Markdown content={restPart} />
+                  {/if}
+                {:else}
+                  <Markdown content={msg.content} />
+                {/if}
+
+                <!-- Analytics Footer -->
+                {#if msg.evalCount || msg.responseTime}
+                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800/80 flex space-x-3 text-[11px] text-gray-400 dark:text-gray-500 font-medium tracking-wide">
+                    {#if msg.responseTime}<span>Answered in {msg.responseTime}s</span>{/if}
+                    {#if msg.responseTime && msg.evalCount}<span class="opacity-30">•</span>{/if}
+                    {#if msg.evalCount}<span>{msg.evalCount} tokens</span>{/if}
+                  </div>
+                {/if}
               {:else}
                 <div class="whitespace-pre-wrap">{msg.content}</div>
               {/if}
@@ -420,13 +553,24 @@
           rows="1"
         ></textarea>
         
-        <button 
-          onclick={handleSend}
-          disabled={isLoading || !prompt.trim() || models.length === 0}
-          class="absolute right-2 bottom-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-400 text-white rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:transform-none active:scale-95"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-        </button>
+        {#if isLoading}
+          <button 
+            onclick={handleStop}
+            class="absolute right-2 bottom-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 active:scale-95"
+            title="Stop Generation"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>
+          </button>
+        {:else}
+          <button 
+            onclick={handleSend}
+            disabled={!prompt.trim() || models.length === 0}
+            class="absolute right-2 bottom-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-400 text-white rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:transform-none active:scale-95"
+            title="Send Message"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
+        {/if}
       </div>
       <div class="w-full text-center mt-2 opacity-50 text-[11px] font-medium tracking-wide">Use Shift + Enter to add a new line</div>
     </div>

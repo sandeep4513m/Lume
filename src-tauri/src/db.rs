@@ -18,8 +18,10 @@ pub struct ChatSession {
 
 #[derive(Serialize, Deserialize)]
 pub struct ChatMessage {
+    pub id: String,
     pub role: String,
     pub content: String,
+    pub created_at: i64,
 }
 
 pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
@@ -134,12 +136,14 @@ pub fn save_message(state: tauri::State<DbState>, session_id: String, role: Stri
 #[tauri::command]
 pub fn get_messages(state: tauri::State<DbState>, session_id: String) -> Result<Vec<ChatMessage>, String> {
     let conn = state.conn.lock().unwrap();
-    let mut stmt = conn.prepare("SELECT role, content FROM messages WHERE session_id = ?1 ORDER BY created_at ASC").map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id, role, content, created_at FROM messages WHERE session_id = ?1 ORDER BY created_at ASC").map_err(|e| e.to_string())?;
     
     let msg_iter = stmt.query_map([&session_id], |row| {
         Ok(ChatMessage {
-            role: row.get(0)?,
-            content: row.get(1)?,
+            id: row.get(0)?,
+            role: row.get(1)?,
+            content: row.get(2)?,
+            created_at: row.get(3)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -155,5 +159,19 @@ pub fn get_messages(state: tauri::State<DbState>, session_id: String) -> Result<
 pub fn clear_messages(state: tauri::State<DbState>, session_id: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM messages WHERE session_id = ?1", [&session_id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_message(state: tauri::State<DbState>, message_id: String) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    conn.execute("DELETE FROM messages WHERE id = ?1", [&message_id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_messages_after(state: tauri::State<DbState>, session_id: String, timestamp: i64) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    conn.execute("DELETE FROM messages WHERE session_id = ?1 AND created_at >= ?2", (&session_id, &timestamp)).map_err(|e| e.to_string())?;
     Ok(())
 }

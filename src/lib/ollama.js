@@ -11,73 +11,82 @@ export async function fetchModels() {
 }
 
 /**
- * Send a message to Ollama with real-time streaming.
+ * Send a message to Ollama with real-time streaming and abort support.
  * @param {string} model - The model name
  * @param {string} prompt - The user prompt
  * @param {(chunk: string) => void} onChunk - Called with each token as it arrives
- * @returns {Promise<string>} - The complete response text
+ * @param {AbortSignal} signal - Signal to abort the request
+ * @returns {Promise<{text: string, evalCount: number}>} - Complete text and token count
  */
-export async function sendMessage(model, prompt, onChunk = null) {
+export async function sendMessage(model, prompt, onChunk = null, signal = null) {
   const response = await fetch('http://localhost:11434/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       model: model,
       prompt: prompt,
-      stream: !!onChunk  // Stream only if callback provided
+      stream: !!onChunk
     })
   });
 
   if (!response.ok) throw new Error('Generation failed.');
 
-  // Non-streaming fallback (if no callback)
+  // Non-streaming fallback
   if (!onChunk) {
     const data = await response.json();
-    return data.response;
+    return { text: data.response, evalCount: data.eval_count || 0 };
   }
 
-  // Streaming: read newline-delimited JSON chunks
+  // Streaming
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = '';
   let buffer = '';
+  let evalCount = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); 
 
-    // Process complete lines from buffer
-    const lines = buffer.split('\n');
-    buffer = lines.pop(); // Keep incomplete last line in buffer
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const chunk = JSON.parse(line);
+          if (chunk.response !== undefined) {
+            fullText += chunk.response;
+            onChunk(fullText);
+          }
+          if (chunk.done && chunk.eval_count) {
+            evalCount = chunk.eval_count;
+          }
+        } catch (e) {
+          // Skip malformed JSON
+        }
+      }
+    }
 
-    for (const line of lines) {
-      if (!line.trim()) continue;
+    if (buffer.trim()) {
       try {
-        const chunk = JSON.parse(line);
-        if (chunk.response) {
+        const chunk = JSON.parse(buffer);
+        if (chunk.response !== undefined) {
           fullText += chunk.response;
           onChunk(fullText);
         }
-      } catch (e) {
-        // Skip malformed JSON lines
-      }
+        if (chunk.done && chunk.eval_count) {
+          evalCount = chunk.eval_count;
+        }
+      } catch (e) {}
     }
+  } finally {
+    reader.releaseLock();
   }
 
-  // Process any remaining buffer
-  if (buffer.trim()) {
-    try {
-      const chunk = JSON.parse(buffer);
-      if (chunk.response) {
-        fullText += chunk.response;
-        onChunk(fullText);
-      }
-    } catch (e) {
-      // Skip
-    }
-  }
-
-  return fullText;
+  return { text: fullText, evalCount };
 }
+
