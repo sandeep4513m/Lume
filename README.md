@@ -6,7 +6,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue)
-![Version](https://img.shields.io/badge/Version-0.2.0-green)
+![Version](https://img.shields.io/badge/Version-0.3.0-green)
 
 ---
 
@@ -14,6 +14,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 ### Core
 - **Zero-Latency Conversations** — Connects directly to Ollama on `localhost:11434` for fully offline inference
+- **Real-Time Streaming** — Watch tokens appear word-by-word as the CPU/GPU generates them
 - **Multi-Session Chat** — Create, switch between, search, and delete independent chat sessions
 - **Persistent History** — SQLite backend with foreign-key cascading ensures conversations survive restarts
 - **Model Selection** — Switch between any installed Ollama model on the fly
@@ -68,7 +69,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 ### Pre-built RPM (Fedora)
 ```bash
-sudo dnf install ./lume-0.2.0-1.x86_64.rpm
+sudo dnf install ./lume-0.3.0-1.x86_64.rpm
 ```
 
 ### From Source

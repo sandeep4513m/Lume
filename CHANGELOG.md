@@ -2,6 +2,19 @@
 
 All notable changes to Lume are documented in this file.
 
+## [0.3.0] — 2026-04-11
+
+### Added
+- **Real-time AI message streaming** — tokens appear word-by-word as Ollama generates them
+- **Streaming UI feedback** — Bouncing dots loading indicator displays until the first token arrives
+- Live Markdown rendering during streaming
+
+### Changed
+- Refactored `ollama.js` API client to utilize `ReadableStream` instead of buffered responses
+- Svelte `$state` reactivity now updates progressively during message stream
+
+---
+
 ## [0.2.0] — 2026-04-11
 
 ### Added

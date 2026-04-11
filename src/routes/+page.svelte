@@ -70,33 +70,28 @@
   }
 
   async function loadChat(id) {
-    console.log('[loadChat] called with id:', id);
     currentSessionId = id;
     prompt = '';
     isLoading = false;
     errorMessage = '';
     try {
-      const result = await invoke('get_messages', { sessionId: id });
-      console.log('[loadChat] got messages:', result.length, result);
-      messages = result;
+      messages = await invoke('get_messages', { sessionId: id });
       setTimeout(scrollToBottom, 100);
     } catch (e) {
-      console.error('[loadChat] ERROR:', e);
+      console.error('[loadChat]', e);
       errorMessage = 'Failed to load messages: ' + e;
     }
   }
 
   async function deleteSession(e, id) {
     e.stopPropagation();
-    console.log('[deleteSession] called with id:', id);
     if (confirm("Delete this chat?")) {
       try {
         await invoke('delete_session', { sessionId: id });
-        console.log('[deleteSession] success');
         if (currentSessionId === id) currentSessionId = '';
         await loadSessions();
       } catch (err) {
-        console.error('[deleteSession] ERROR:', err);
+        console.error('[deleteSession]', err);
         errorMessage = 'Failed to delete: ' + err;
       }
     }
@@ -160,23 +155,38 @@
     messages.push({ role: 'user', content: currentPrompt });
     
     invoke('save_message', { sessionId: currentSessionId, role: 'user', content: currentPrompt })
-      .then(() => loadSessions(currentSessionId)) // Auto-updates the sidebar title! 
+      .then(() => loadSessions(currentSessionId))
       .catch(console.error);
     
-    const aiIndex = messages.push({ role: 'ai', content: '', isLoading: true }) - 1;
+    // Add placeholder AI message with loading state
+    const aiIndex = messages.length;
+    messages.push({ role: 'ai', content: '', isLoading: true });
+    messages = messages; // trigger reactivity
     if (showScrollButton) hasUnread = true;
     
     try {
-      const responseText = await sendMessage(selectedModel, currentPrompt);
-      messages = messages.map((msg, i) => 
-        i === aiIndex ? { ...msg, content: responseText, isLoading: false } : msg
-      );
-      invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: responseText })
+      const finalText = await sendMessage(selectedModel, currentPrompt, (streamedText) => {
+        // On each token: update the message content and force Svelte reactivity
+        messages[aiIndex] = { role: 'ai', content: streamedText, isLoading: false };
+        messages = messages; // reassign to trigger $state reactivity
+        
+        // Auto-scroll while streaming (if user hasn't scrolled up)
+        if (!showScrollButton) {
+          setTimeout(scrollToBottom, 10);
+        }
+      });
+      
+      // Ensure final state is clean
+      messages[aiIndex] = { role: 'ai', content: finalText, isLoading: false };
+      messages = messages;
+      
+      invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: finalText })
         .then(() => loadSessions(currentSessionId))
         .catch(console.error);
     } catch (error) {
       errorMessage = "Error communicating with Ollama: " + error.message;
-      messages.pop(); 
+      // Remove the failed AI message
+      messages = messages.filter((_, i) => i !== aiIndex);
       prompt = currentPrompt;
       tick().then(adjustTextareaHeight);
     } finally {
