@@ -13,6 +13,9 @@ It runs blisteringly fast on low-end hardware, ensures complete offline privacy,
 - **Futuristic Aesthetics**: Glassmorphism elements, native Dark/Light mode detection, and responsive message bubbles.
 - **Developer Grade**: Full Markdown rendering and dynamic syntax highlighting for generated code.
 
+## 📸 Screenshots
+*Screenshots coming soon*
+
 ## 🛠️ Tech Stack
 - **Frontend**: Svelte 5, Tailwind CSS v3
 - **Backend / IPC**: Tauri v2 (Rust)
@@ -41,7 +44,7 @@ Prerequisites: `Node.js`, `Rust (cargo)`, and Tauri dependencies (`webkit2gtk4.1
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/lume.git
+git clone https://github.com/Sandeep87p/Lume.git
 cd lume
 ```
 2. Install npm dependencies:
