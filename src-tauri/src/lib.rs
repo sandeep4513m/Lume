@@ -14,6 +14,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            db::create_session,
+            db::get_sessions,
+            db::delete_session,
             db::save_message,
             db::get_messages,
             db::clear_messages
