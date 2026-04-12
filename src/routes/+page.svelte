@@ -247,18 +247,16 @@
     .then(r => r.json())
     .then(data => {
       let numCtx = 4096;
-      // 1. Check explicit override in parameters (Modelfile num_ctx)
       if (data.parameters) {
         const match = data.parameters.match(/num_ctx\s+(\d+)/);
         if (match) numCtx = parseInt(match[1], 10);
       }
-      // 2. If no explicit override, read architecture context_length but clamp to 4096
-      //    to protect 8GB RAM hardware from OOM. Only trust explicit num_ctx at face value.
       if (numCtx === 4096 && data.model_info) {
         const ctxKey = Object.keys(data.model_info).find(k => k.endsWith('.context_length'));
         if (ctxKey) numCtx = Math.min(4096, parseInt(data.model_info[ctxKey], 10));
       }
-      console.log('[ContextSize] fetched:', modelName, '→', numCtx, '(params:', !!data.parameters, ')');
+      
+      console.log('[ContextSize] fetched:', modelName, '→', numCtx);
       activeContextSize = numCtx;
       
       // Store in cache so future model switches are instant
@@ -289,7 +287,7 @@
 
   /** @param {number} timestamp */
   function timeAgo(timestamp) {
-    const seconds = Math.floor(Date.now() / 1000) - timestamp;
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
     if (seconds < 60) return 'Just now';
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
@@ -298,7 +296,7 @@
     const days = Math.floor(hours / 24);
     if (days === 1) return 'Yesterday';
     if (days < 7) return `${days}d ago`;
-    return new Date(timestamp * 1000).toLocaleDateString();
+    return new Date(timestamp).toLocaleDateString();
   }
 
   /** @param {string | null} switchToId */
@@ -479,13 +477,19 @@
     }
   }
 
+  let activeSessionWordCount = $state(0);
+
+  $effect(() => {
+    if (!isLoading) {
+      const text = messages.filter(m => m.role === 'ai').map(m => m.content).join(' ');
+      activeSessionWordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+    }
+  });
+
   /** @param {string} sessionId */
   function getChatWordCount(sessionId) {
-    // Only count for currently loaded session (messages in memory)
     if (sessionId !== currentSessionId) return null;
-    const text = messages.filter(m => m.role === 'ai').map(m => m.content).join(' ');
-    const count = text.trim() ? text.trim().split(/\s+/).length : 0;
-    return count > 0 ? count : null;
+    return activeSessionWordCount > 0 ? activeSessionWordCount : null;
   }
 
   /** @param {number} n */
@@ -497,7 +501,7 @@
     // Load user name from app_settings; fall back to 'User'
     invoke('get_setting', { key: 'user_name' })
       .then((n) => { if (n) userName = /** @type {string} */ (n); })
-      .catch(() => {});
+      .catch((e) => console.error('[onMount] get_setting failed:', e));
 
     fetchModels().then((m) => {
       models = m;
@@ -548,7 +552,8 @@
     }
   }
 
-  async function handleSend() {
+  async function handleSend(skipUserSave = false) {
+    if (typeof skipUserSave !== 'boolean') skipUserSave = false;
     if (!prompt.trim() || !selectedModel || isLoading || !currentSessionId) return;
     
     currentAbortController = new AbortController();
@@ -564,20 +569,21 @@
     isLoading = true;
     errorMessage = '';
     
-    messages.push({ role: 'user', content: currentPrompt });
-    const userMsgIndex = messages.length - 1;
-    
-    invoke('save_message', { sessionId: currentSessionId, role: 'user', content: currentPrompt })
-      .then((id) => {
-         messages[userMsgIndex].id = id;
-         messages[userMsgIndex].created_at = Date.now() / 1000;
-         loadSessions();
-      })
-      .catch(console.error);
+    if (!skipUserSave) {
+      messages.push({ role: 'user', content: currentPrompt });
+      const userMsgIndex = messages.length - 1;
+      
+      invoke('save_message', { sessionId: currentSessionId, role: 'user', content: currentPrompt })
+        .then((id) => {
+           messages[userMsgIndex].id = id;
+           messages[userMsgIndex].created_at = Date.now();
+           loadSessions();
+        })
+        .catch(console.error);
+    }
     
     const aiIndex = messages.length;
     messages.push({ role: 'ai', content: '', isLoading: true });
-    messages = messages; 
     if (showScrollButton) hasUnread = true;
     
     try {
@@ -585,8 +591,8 @@
         selectedModel, 
         currentPrompt, 
         isStreamingEnabled ? (streamedText) => {
-          messages[aiIndex] = { role: 'ai', content: streamedText, isLoading: false };
-          messages = messages; 
+          messages[aiIndex].content = streamedText;
+          messages[aiIndex].isLoading = false;
           if (!showScrollButton) setTimeout(scrollToBottom, 10);
         } : null,
         currentAbortController.signal,
@@ -595,28 +601,28 @@
       
       const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
       
-      messages[aiIndex] = { role: 'ai', content: finalText, isLoading: false, evalCount, responseTime };
-      messages = messages;
+      messages[aiIndex].content = finalText;
+      messages[aiIndex].isLoading = false;
+      messages[aiIndex].evalCount = evalCount;
+      messages[aiIndex].responseTime = responseTime;
       
-      invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: finalText })
-        .then((id) => {
-           messages[aiIndex].id = id;
-           messages[aiIndex].created_at = Date.now() / 1000;
-           loadSessions();
-        })
-        .catch(console.error);
+      try {
+        const id = await invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: finalText });
+        messages[aiIndex].id = id;
+        messages[aiIndex].created_at = Date.now();
+        await loadSessions();
+      } catch (err) { Object.seal(err); console.error(err); }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         const partialText = messages[aiIndex].content;
         messages[aiIndex].isLoading = false;
-        messages = messages;
         if (partialText) {
-            invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: partialText })
-              .then((id) => {
-                 messages[aiIndex].id = id;
-                 messages[aiIndex].created_at = Date.now() / 1000;
-                 loadSessions();
-              });
+            try {
+              const id = await invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: partialText });
+              messages[aiIndex].id = id;
+              messages[aiIndex].created_at = Date.now();
+              await loadSessions();
+            } catch (err) { Object.seal(err); console.error(err); }
         } else {
             messages = messages.filter((_, i) => i !== aiIndex);
         }
@@ -683,7 +689,7 @@
     try {
       await invoke('delete_message', { messageId: msg.id });
       messages = messages.filter(m => m.id !== msg.id);
-      await handleSend();
+      await handleSend(true);
     } catch (e) {
       errorMessage = "Failed to regenerate: " + e;
     }
@@ -1565,7 +1571,7 @@
           </button>
         {:else}
           <button 
-            onclick={handleSend}
+            onclick={() => handleSend()}
             disabled={!prompt.trim() || models.length === 0}
             class="absolute right-2 bottom-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-400 text-white rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:transform-none active:scale-95"
             title="Send Message"

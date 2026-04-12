@@ -1,6 +1,13 @@
+function getBaseUrl() {
+  if (typeof localStorage !== 'undefined') {
+    return localStorage.getItem('lume_ollama_url') || 'http://localhost:11434';
+  }
+  return 'http://localhost:11434';
+}
+
 export async function fetchModels() {
   try {
-    const response = await fetch('http://localhost:11434/api/tags');
+    const response = await fetch(`${getBaseUrl()}/api/tags`);
     if (!response.ok) throw new Error('Ollama is not responding. Is it running?');
     const data = await response.json();
     return data.models || [];
@@ -28,7 +35,7 @@ export async function sendMessage(model, prompt, onChunk = null, signal = null, 
   };
   if (system) body.system = system;
 
-  const response = await fetch('http://localhost:11434/api/generate', {
+  const response = await fetch(`${getBaseUrl()}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal: signal || undefined,

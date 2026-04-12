@@ -62,6 +62,11 @@ pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)",
+        [],
+    )?;
+
     // Safe migrations — silently ignored if column already exists
     let _ = conn.execute("ALTER TABLE sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''", []);
@@ -84,7 +89,7 @@ pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
 pub fn create_session(state: tauri::State<DbState>, title: String, model: String, temperature: f64, system_prompt: String) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
     conn.execute(
         "INSERT INTO sessions (id, title, created_at, updated_at, model, temperature, system_prompt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -179,7 +184,7 @@ pub fn delete_session(state: tauri::State<DbState>, session_id: String) -> Resul
 pub fn save_message(state: tauri::State<DbState>, session_id: String, role: String, content: String) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
     // Check if it's the first message to dynamically update the session title!
     let count: i32 = conn.query_row("SELECT COUNT(*) FROM messages WHERE session_id = ?1", [&session_id], |row| row.get(0)).unwrap_or(1);
@@ -290,7 +295,7 @@ pub struct ImportMessage {
 pub fn import_chat(state: tauri::State<DbState>, title: String, messages: Vec<ImportMessage>) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     let session_id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
     
     conn.execute(
         "INSERT INTO sessions (id, title, created_at, updated_at, is_pinned) VALUES (?1, ?2, ?3, ?4, 0)",
@@ -311,10 +316,12 @@ pub fn import_chat(state: tauri::State<DbState>, title: String, messages: Vec<Im
 
 #[tauri::command]
 pub fn delete_sessions(state: tauri::State<DbState>, session_ids: Vec<String>) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
     for id in &session_ids {
-        conn.execute("DELETE FROM sessions WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM sessions WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -347,6 +354,7 @@ pub fn wipe_all_data(state: tauri::State<DbState>) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM messages", []).map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM sessions", []).map_err(|e| e.to_string())?;
+    conn.execute("VACUUM", []).map_err(|e| e.to_string())?;
     Ok(())
 }
 

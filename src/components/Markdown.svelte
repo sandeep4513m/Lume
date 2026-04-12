@@ -42,7 +42,7 @@
       if (!flexContainer) return;
       const codeBlock = /** @type {HTMLElement} */ (flexContainer.querySelector('pre code'));
       if (codeBlock) {
-        navigator.clipboard.writeText(codeBlock.innerText);
+        navigator.clipboard.writeText(codeBlock.textContent || '');
         const originalHtml = btn.innerHTML;
         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><polyline points="20 6 9 17 4 12"></polyline></svg><span class="text-emerald-500">Copied!</span>`;
         setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
