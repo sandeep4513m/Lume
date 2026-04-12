@@ -6,6 +6,7 @@
   import Settings from '../components/Settings.svelte';
   import lumeFireLogo from '$lib/assets/lume-icon.png';
 
+  /** @type {any[]} */
   let models = $state([]);
   let selectedModel = $state('');
   let selectedTemperature = $state(0.7);

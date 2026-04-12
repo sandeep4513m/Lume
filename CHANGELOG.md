@@ -2,6 +2,23 @@
 
 All notable changes to Lume are documented in this file.
 
+## [0.5.0] — 2026-04-12
+
+### Added
+- Settings panel with 5 tabs (Models, Chat, Appearance, Data, About)
+- Per-chat model switching
+- Temperature slider per chat
+- System prompt per chat
+- Preset personalities (Coder, Writer, Assistant)
+- Pin favourite chats to top
+- Export/Import chat history
+- Bulk delete chats
+- User profile in sidebar
+- Lume icon and logo assets
+
+---
+
+
 ## [0.4.0] — 2026-04-11
 
 ### Added

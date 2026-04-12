@@ -6,7 +6,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue)
-![Version](https://img.shields.io/badge/Version-0.4.0-green)
+![Version](https://img.shields.io/badge/Version-0.5.0-green)
 
 ---
 
@@ -34,6 +34,13 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 - **Model Analytics** — Subtly displays Generation Time (seconds) and Token Count underneath model responses.
 
 
+### Settings & Personalization
+- **Settings Panel** — Dedicated modal with 5 distinct configuration tabs (Models, Chat, Appearance, Data, About)
+- **Granular Control** — Modify AI temperatures and assign specific models to unique chats
+- **Agent Personalities** — Built-in selectable personas (Coder, Writer, Pirate, Analyst, Assistant)
+- **Data Portability** — Easily Export and Import complete markdown/JSON chat histories natively
+- **Side Panel Upgrades** — Pin favorite chats to the top, toggle bulk deletion modes, and view user profiles dynamically
+
 ### Performance
 - **~5 MB** binary size
 - **< 0.5s** startup time
@@ -41,7 +48,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 - **No Electron** — Native WebKit via Tauri
 
 ## 📸 Screenshots
-*Screenshots coming soon*
+*UI Overhaul Complete - Fresh Interface Screenshots Updating Soon*
 
 ---
 
@@ -75,7 +82,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 ### Pre-built RPM (Fedora)
 ```bash
-sudo dnf install ./lume-0.4.0-1.x86_64.rpm
+sudo dnf install ./lume-0.5.0-1.x86_64.rpm
 ```
 
 ### From Source
