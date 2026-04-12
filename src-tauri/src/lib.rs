@@ -21,8 +21,20 @@ pub fn run() {
             db::get_messages,
             db::clear_messages,
             db::delete_message,
-            db::delete_messages_after
+            db::delete_messages_after,
+            db::toggle_pin,
+            db::export_chat_markdown,
+            db::import_chat,
+            db::delete_sessions,
+            db::get_storage_stats,
+            db::wipe_all_data,
+            db::set_session_model,
+            db::set_session_temperature,
+            db::set_session_system_prompt,
+            db::get_setting,
+            db::set_setting
         ])
+        // The generated context from tauri-build
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

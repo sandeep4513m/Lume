@@ -1,3 +1,23 @@
 {
-  "svelte.enable-ts-plugin": true
+  // Svelte language server
+  "svelte.enable-ts-plugin": true,
+
+  // CSS Settings for Tailwind
+  "css.lint.unknownAtRules": "ignore",
+
+  // ── rust-analyzer ────────────────────────────────────────────────────────
+  // These three settings fix the 6 false-positive errors on
+  // tauri::generate_context!() by making rust-analyzer run build.rs
+  // (which invokes tauri-build and produces the context the macro needs).
+  "rust-analyzer.cargo.buildScripts.enable": true,
+  "rust-analyzer.procMacro.enable": true,
+  "rust-analyzer.procMacro.attributes.enable": true,
+
+  // Silence the one diagnostic that can never fully resolve in Tauri projects
+  "rust-analyzer.diagnostics.disabled": ["unresolved-proc-macro"],
+
+  // Point at the crate root explicitly
+  "rust-analyzer.linkedProjects": [
+    "src-tauri/Cargo.toml"
+  ]
 }

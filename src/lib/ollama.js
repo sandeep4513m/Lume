@@ -14,20 +14,25 @@ export async function fetchModels() {
  * Send a message to Ollama with real-time streaming and abort support.
  * @param {string} model - The model name
  * @param {string} prompt - The user prompt
- * @param {(chunk: string) => void} onChunk - Called with each token as it arrives
- * @param {AbortSignal} signal - Signal to abort the request
+ * @param {((chunk: string) => void) | null} onChunk - Called with each token as it arrives
+ * @param {AbortSignal | null} signal - Signal to abort the request
+ * @param {string} [system] - Optional system prompt override
  * @returns {Promise<{text: string, evalCount: number}>} - Complete text and token count
  */
-export async function sendMessage(model, prompt, onChunk = null, signal = null) {
+export async function sendMessage(model, prompt, onChunk = null, signal = null, system = '') {
+  /** @type {Record<string, any>} */
+  const body = {
+    model: model,
+    prompt: prompt,
+    stream: !!onChunk
+  };
+  if (system) body.system = system;
+
   const response = await fetch('http://localhost:11434/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify({
-      model: model,
-      prompt: prompt,
-      stream: !!onChunk
-    })
+    signal: signal || undefined,
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) throw new Error('Generation failed.');
@@ -39,6 +44,7 @@ export async function sendMessage(model, prompt, onChunk = null, signal = null) 
   }
 
   // Streaming
+  if (!response.body) throw new Error('Response body is null');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = '';
@@ -52,7 +58,7 @@ export async function sendMessage(model, prompt, onChunk = null, signal = null) 
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop(); 
+      buffer = lines.pop() || ''; 
 
       for (const line of lines) {
         if (!line.trim()) continue;

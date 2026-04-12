@@ -8,7 +8,51 @@
   }
 }
 
-/* This simple line forces native webview dropdowns & scrollbars to go dark! */
+/* Settings modal entrance animations */
+.settings-backdrop-enter {
+  animation: settings-fade-in 200ms ease-out forwards;
+}
+.settings-modal-enter {
+  animation: settings-slide-up 200ms ease-out forwards;
+}
+
+@keyframes settings-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes settings-slide-up {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Custom range slider thumb — emerald accent */
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  border: 2px solid white;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #10b981;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  border: 2px solid white;
+}
+
+/* Force native webview dropdowns & scrollbars dark */
 body.dark {
-  color-scheme: dark; 
+  color-scheme: dark;
 }
