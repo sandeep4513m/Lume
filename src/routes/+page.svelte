@@ -1053,8 +1053,9 @@
       class="flex-1 overflow-y-auto w-full p-6 space-y-6 flex flex-col scroll-smooth"
     >
       {#if errorMessage}
-        <div class="max-w-3xl mx-auto w-full p-4 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 rounded-xl text-sm shadow-sm">
-          {errorMessage}
+        <div class="max-w-3xl mx-auto w-full p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 rounded-2xl text-sm shadow-sm animate-fade-in flex items-start space-x-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{errorMessage}</span>
         </div>
       {/if}
 
