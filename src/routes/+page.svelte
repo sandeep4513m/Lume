@@ -1140,8 +1140,8 @@
 
             <div class="text-[15px] leading-relaxed transition-colors relative flex flex-col
               {msg.role === 'user' 
-                ? 'rounded-2xl max-w-[85%] shadow-sm bg-emerald-500 text-white rounded-br-none px-5 py-3.5 overflow-hidden' 
-                : 'w-full max-w-full text-gray-800 dark:text-gray-200 py-1'}">
+                ? 'rounded-2xl max-w-[85%] bg-emerald-500 text-white rounded-br-none px-5 py-3.5 shadow-[0_2px_12px_rgba(16,185,129,0.25)] hover:shadow-[0_4px_16px_rgba(16,185,129,0.35)] transition-shadow overflow-hidden' 
+                : 'w-full max-w-full text-gray-800 dark:text-gray-200 py-1 px-1'}">
               
 
 
@@ -1230,7 +1230,7 @@
                 
                 {#if msg.role === 'ai' && !msg.isLoading}
                   <!-- Combined action + analytics row -->
-                  <div class="mt-4 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800/60 flex items-center opacity-0 group-hover:opacity-100 transition-all duration-200">
                     <!-- Left: action buttons -->
                     <div class="flex items-center space-x-0.5 text-gray-400 dark:text-gray-500">
                       <button onclick={() => handleCopy(msg.content, i)} class="p-1.5 hover:text-emerald-500 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-[#21262d]" title="Copy">
