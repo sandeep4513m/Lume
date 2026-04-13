@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { fetchModels, sendMessage } from '$lib/ollama.js';
   import Markdown from '../components/Markdown.svelte';
@@ -535,6 +535,8 @@
     // Setup initial streaming preference from localStorage
     const savedStreaming = localStorage.getItem('lume_streaming');
     if (savedStreaming !== null) isStreamingEnabled = savedStreaming === 'true';
+    // Keyboard shortcuts
+    window.addEventListener('keydown', handleKeydown);
 
     // Load chat sessions from database — CRITICAL for sidebar and chat to work
     loadSessions();
@@ -722,6 +724,32 @@
       messages = [];
     }
   }
+
+  /** @param {KeyboardEvent} e */
+  function handleKeydown(e) {
+    // Ctrl+N — new chat
+    if (e.ctrlKey && e.key === 'n') {
+      e.preventDefault();
+      createNewChat();
+    }
+    // Ctrl+/ — focus input
+    if (e.ctrlKey && e.key === '/') {
+      e.preventDefault();
+      textareaRef?.focus();
+    }
+    // Escape — close all menus
+    if (e.key === 'Escape') {
+      isModelMenuOpen = false;
+      isTempMenuOpen = false;
+      isSystemPromptOpen = false;
+      isSettingsOpen = false;
+      isUserMenuOpen = false;
+    }
+  }
+
+  onDestroy(() => {
+    window.removeEventListener('keydown', handleKeydown);
+  });
 </script>
 
 <div class="flex h-screen w-full bg-white dark:bg-[#0d1117] text-gray-900 dark:text-gray-100 transition-colors duration-200 overflow-hidden">

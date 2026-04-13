@@ -1,3 +1,17 @@
+## [0.6.0] - 2025-04-13
+
+### Added
+- Empty states: Ollama offline, no models installed, new chat welcome screen
+- Suggestion chips on new chat (Write, Code, Explain, Analyze)
+- Sidebar loading skeletons while sessions fetch
+- Smooth fade-in-up animations on messages and sidebar items
+- Keyboard shortcuts: Ctrl+N (new chat), Ctrl+/ (focus input), Escape (close menus)
+
+### Improved
+- Message bubble design with emerald glow shadow on user messages
+- AI message action row now has subtle top border separator
+- Error messages now show an icon for better visibility
+
 # Changelog
 
 All notable changes to Lume are documented in this file.
