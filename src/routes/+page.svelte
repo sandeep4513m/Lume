@@ -807,6 +807,7 @@
           role="button"
           tabindex="0"
           onclick={() => isBulkSelectMode ? null : loadChat(session.id)}
+          style="animation: fade-in-up 200ms ease-out forwards;"
           onkeydown={(e) => { if(!isBulkSelectMode && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); loadChat(session.id); } }}
           class="group cursor-pointer flex items-center rounded-lg p-2.5 transition-all relative select-none
             {session.id === currentSessionId && !isBulkSelectMode ? 'bg-white dark:bg-[#1a212c] border-l-2 border-emerald-500 shadow-sm' : 'hover:bg-gray-200/50 dark:hover:bg-[#1a212c]/70 border-l-2 border-transparent'}
@@ -1103,7 +1104,7 @@
 
           {:else}
             <!-- STATE: Normal new chat -->
-            <div class="m-auto flex flex-col items-center justify-center text-center px-6 max-w-lg">
+            <div class="m-auto flex flex-col items-center justify-center text-center px-6 max-w-lg animate-fade-in">
               <img src={lumeFireLogo} alt="Lume" class="h-12 w-12 object-contain mb-5 filter drop-shadow-[0_0_16px_rgba(16,185,129,0.5)]">
               <h2 class="text-[22px] font-semibold text-gray-800 dark:text-gray-100 mb-1.5">What can I help you with?</h2>
               <p class="text-[13px] text-gray-400 dark:text-gray-500 mb-8">Using <span class="text-emerald-500 font-medium">{selectedModel}</span></p>
@@ -1128,7 +1129,7 @@
         {/if}
 
         {#each messages as msg, i}
-          <div class="flex w-full {msg.role === 'user' ? 'justify-end' : 'justify-start'} group">
+          <div class="flex w-full {msg.role === 'user' ? 'justify-end' : 'justify-start'} group animate-fade-in-up">
             
             {#if msg.role === 'user' && !isLoading}
               <!-- Edit Button for User -->
