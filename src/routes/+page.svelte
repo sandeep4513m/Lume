@@ -26,6 +26,7 @@
   // Sidebar Multi-Session State
   /** @type {any[]} */
   let sessions = $state([]);
+  let sessionsLoading = $state(true);
   let currentSessionId = $state('');
   let isSidebarCollapsed = $state(false);
   let isModelMenuOpen = $state(false);
@@ -303,7 +304,9 @@
   /** @param {string | null} switchToId */
   async function loadSessions(switchToId = null) {
     try {
+      sessionsLoading = true;
       sessions = await invoke('get_sessions');
+      sessionsLoading = false;
       if (sessions.length > 0) {
         if (switchToId) {
             await loadChat(switchToId);
@@ -314,6 +317,7 @@
         await createNewChat();
       }
     } catch(e) {
+      sessionsLoading = false;
       errorMessage = "Failed to load sessions: " + e;
     }
   }
@@ -786,6 +790,18 @@
 
     <!-- Persistent Chat List -->
     <div class="flex-1 overflow-y-auto w-full px-3 py-4 space-y-1.5 scroll-smooth relative">
+      {#if sessionsLoading}
+        {#each [1,2,3,4,5] as _}
+          <div class="rounded-lg p-2.5 flex flex-col gap-1.5 {isSidebarCollapsed ? 'items-center' : ''}">
+            {#if !isSidebarCollapsed}
+              <div class="h-3 w-3/4 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              <div class="h-2.5 w-1/3 rounded-full bg-gray-100 dark:bg-gray-800 animate-pulse"></div>
+            {:else}
+              <div class="h-8 w-8 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            {/if}
+          </div>
+        {/each}
+      {:else}
       {#each filteredSessions as session}
         <div 
           role="button"
@@ -858,6 +874,7 @@
           {#if isSidebarCollapsed} ... {:else} No chats found {/if}
         </div>
       {/if}
+    {/if}
 
       <!-- Bulk Delete floating action bar -->
       {#if isBulkSelectMode && selectedSessionIds.size > 0}
