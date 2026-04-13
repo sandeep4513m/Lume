@@ -1,137 +1,55 @@
-# 🚀 Lume — Local AI Desktop Client
+# Lume
 
-**Lume** is a high-performance, privacy-first AI desktop chat application for Linux. It provides a clean, modern interface for your local [Ollama](https://ollama.com/) models — no cloud, no telemetry, no compromise.
+A clean, native desktop chat interface for Ollama, built with Tauri and SvelteKit.
 
-Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end hardware while delivering a premium user experience that rivals ChatGPT and Claude's desktop apps.
+## What's New in v0.7.0 — Model Manager
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
-![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue)
-![Version](https://img.shields.io/badge/Version-0.5.0-green)
+- **Model Manager** — Open it from the model picker dropdown or the profile menu.
+- **Installed tab** — View local models with size, parameter count, and family badge; use or delete models in one click.
+- **Discover tab** — Hardware-aware recommendations with Fast, Balanced, and Best suggestions based on detected RAM/VRAM.
+- **One-click downloads** — Download models directly in-app with a live progress bar.
+- **Hardware detection** — Rust-powered RAM and VRAM detection (NVIDIA via `nvidia-smi`, with RAM-tier fallback).
+- **Error handling** — Clear feedback for offline Ollama, interrupted downloads, disk-full conditions, and unknown models.
+- **SQLite persistence** — Last-used model is persisted across sessions.
+- **Auto-switch flow** — After download completes, the UI switches to Installed and selects the downloaded model.
 
----
+## Previous versions
 
-## ✨ Features
+### v0.6.0
 
-### Core
-- **Zero-Latency Conversations** — Connects directly to Ollama on `localhost:11434` for fully offline inference
-- **Real-Time Streaming** — Watch tokens appear word-by-word as the CPU/GPU generates them
-- **Multi-Session Chat** — Create, switch between, search, and delete independent chat sessions
-- **Persistent History** — SQLite backend with foreign-key cascading ensures conversations survive restarts
-- **Model Selection** — Switch between any installed Ollama model on the fly
+- Settings panel
+- Custom Ollama URL support
+- Dark/light mode
 
-### Interface
-- **Collapsible Sidebar** — Premium sidebar with session list, search bar, and smooth 300ms collapse animation
-- **Smart Titles** — Session titles auto-generate from your first message (truncated to 35 chars)
-- **Time-Relative Stamps** — Sidebar shows "Just now", "2h ago", "Yesterday" etc.
-- **Dark / Light Mode** — Native system-preference detection with manual toggle
-- **Markdown & Syntax Highlighting** — Full GFM rendering with `highlight.js` code blocks
-- **Scroll-to-Bottom FAB** — Floating action button with unread badge and bounce animation
-### Interaction & Details
-- **Thinking Process Parsing** — Natively extracts `<think>` reasoning metadata and renders inline as a collapsible component (for DeepSeek/Gemma reasoning models).
-- **Edit & Regenerate** — Modify previous prompts to branch out chats, or easily regenerate an AI output with one click.
-- **Stop Generation** — Mid-stream capability to instantly abort API outputs, saving CPU tokens.
-- **Copy Message** — One-click text copying to your system clipboard.
-- **Model Analytics** — Subtly displays Generation Time (seconds) and Token Count underneath model responses.
+### v0.5.0
 
+- Initial release
+- Chat with local Ollama models
+- Model picker dropdown
+- Streaming responses
 
-### Settings & Personalization
-- **Settings Panel** — Dedicated modal with 5 distinct configuration tabs (Models, Chat, Appearance, Data, About)
-- **Granular Control** — Modify AI temperatures and assign specific models to unique chats
-- **Agent Personalities** — Built-in selectable personas (Coder, Writer, Pirate, Analyst, Assistant)
-- **Data Portability** — Easily Export and Import complete markdown/JSON chat histories natively
-- **Side Panel Upgrades** — Pin favorite chats to the top, toggle bulk deletion modes, and view user profiles dynamically
+## Tech Stack
 
-### Performance
-- **~5 MB** binary size
-- **< 0.5s** startup time
-- **< 20 MB** idle RAM usage
-- **No Electron** — Native WebKit via Tauri
+- **Frontend** — SvelteKit + Svelte 5 + TailwindCSS
+- **Backend** — Tauri (Rust)
+- **Database** — SQLite via rusqlite
+- **AI Runtime** — Ollama (local)
 
-## 📸 Screenshots
-*UI Overhaul Complete - Fresh Interface Screenshots Updating Soon*
+## Getting Started
 
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Framework** | [Tauri v2](https://tauri.app/) (Rust backend) |
-| **Frontend** | [Svelte 5](https://svelte.dev/) with `$state` / `$derived` reactivity |
-| **Styling** | [Tailwind CSS v3](https://tailwindcss.com/) + `@tailwindcss/typography` |
-| **Database** | SQLite via [`rusqlite`](https://github.com/rusqlite/rusqlite) |
-| **Markdown** | [`marked`](https://marked.js.org/) + [`marked-highlight`](https://github.com/markedjs/marked-highlight) + [`DOMPurify`](https://github.com/cure53/DOMPurify) |
-| **Syntax** | [`highlight.js`](https://highlightjs.org/) (github-dark-dimmed theme) |
-| **Inference** | [Ollama](https://ollama.com/) REST API |
-
----
-
-## 💻 System Requirements
-
-| Resource | Minimum |
-|----------|---------|
-| **OS** | Fedora 40+ / any RPM-based Linux distro |
-| **CPU** | Intel Core i5 or equivalent |
-| **RAM** | 8 GB (Lume itself uses < 20 MB) |
-| **Disk** | ~10 MB for Lume + Ollama model weights |
-| **GPU** | Not required (Ollama handles GPU acceleration) |
-
----
-
-## 📦 Installation
-
-### Pre-built RPM (Fedora)
 ```bash
-sudo dnf install ./lume-0.5.0-1.x86_64.rpm
-```
-
-### From Source
-**Prerequisites:** Node.js 18+, Rust 1.70+, and Tauri system dependencies:
-```bash
-sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file \
-  libappindicator-gtk3-devel librsvg2-devel pango-devel
-```
-
-**Build steps:**
-```bash
-git clone https://github.com/sandeep4513m/Lume.git
-cd Lume
+# Install dependencies
 npm install
-npm run tauri dev      # Development mode with hot-reload
-npm run tauri build    # Production RPM bundle
+
+# Run in development
+npm run tauri dev
+
+# Build for production
+npm run tauri build
 ```
 
-> **Note:** Ensure Ollama is installed and running before launching Lume:
-> ```bash
-> systemctl start ollama
-> ```
+## Requirements
 
----
-
-## 🗃️ Project Structure
-```
-lume/
-├── src/                    # Svelte frontend
-│   ├── routes/+page.svelte # Main chat + sidebar UI
-│   ├── components/         # Markdown renderer
-│   └── lib/ollama.js       # Ollama API client
-├── src-tauri/              # Rust backend
-│   ├── src/db.rs           # SQLite schema + Tauri commands
-│   └── src/lib.rs          # App bootstrap + command registration
-├── package.json
-└── README.md
-```
-
----
-
-## 🤝 Contributing
-Contributions are welcome! Feel free to open issues or submit pull requests.
-
-## 📄 License
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
-
----
-
-<p align="center">
-  Built with 💚 using <a href="https://tauri.app">Tauri</a> + <a href="https://svelte.dev">Svelte</a> + <a href="https://ollama.com">Ollama</a>
-</p>
+- [Ollama](https://ollama.ai) installed and running
+- Node.js 18+
+- Rust toolchain

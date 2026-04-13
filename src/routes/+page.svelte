@@ -4,6 +4,7 @@
   import { fetchModels, sendMessage } from '$lib/ollama.js';
   import Markdown from '../components/Markdown.svelte';
   import Settings from '../components/Settings.svelte';
+  import ModelManager from '../components/ModelManager.svelte';
   import lumeFireLogo from '$lib/assets/lume-icon.png';
 
   /** @type {any[]} */
@@ -119,6 +120,7 @@
   let showScrollButton = $state(false);
   let isDarkMode = $state(false);
   let isSettingsOpen = $state(false);
+  let isModelManagerOpen = $state(false);
   /** @type {Set<number>} - tracks which AI message indices have their think block collapsed */
   let collapsedThinkBlocks = $state(new Set());
 
@@ -743,6 +745,7 @@
       isTempMenuOpen = false;
       isSystemPromptOpen = false;
       isSettingsOpen = false;
+      isModelManagerOpen = false;
       isUserMenuOpen = false;
     }
   }
@@ -1003,6 +1006,7 @@
           <div class="px-1.5 pt-1 pb-1.5">
             <!-- Get Models -->
             <button
+              onclick={() => { isModelManagerOpen = true; isUserMenuOpen = false; }}
               class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left"
             >
               <!-- Lucide Download -->
@@ -1675,6 +1679,15 @@
                       {/if}
                     </div>
                   {/each}
+                  <div class="border-t border-gray-100 dark:border-gray-800 mt-1 pt-1">
+                    <button
+                      onclick={() => { isModelMenuOpen = false; isModelManagerOpen = true; }}
+                      class="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors font-medium"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Get Models
+                    </button>
+                  </div>
                 </div>
               </div>
             {/if}
@@ -1721,4 +1734,9 @@
   {isStreamingEnabled}
   onStreamingChange={(enabled) => isStreamingEnabled = enabled}
   onDataWiped={() => { loadSessions(); }}
+/>
+<ModelManager
+  isOpen={isModelManagerOpen}
+  onClose={() => { isModelManagerOpen = false; }}
+  onModelSelect={(/** @type {string} */ model) => { selectedModel = model; }}
 />

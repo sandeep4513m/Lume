@@ -1,5 +1,6 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -387,4 +388,73 @@ pub fn set_setting(state: tauri::State<DbState>, key: String, value: String) -> 
         (&key, &value),
     ).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn db_path() -> PathBuf {
+    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("lume");
+    std::fs::create_dir_all(&path).ok();
+    path.push("lume.db");
+    path
+}
+
+pub fn init_db() -> Result<()> {
+    let conn = Connection::open(db_path())?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS preferences (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );",
+    )?;
+    Ok(())
+}
+
+pub fn set_pref(key: &str, value: &str) -> Result<()> {
+    let conn = Connection::open(db_path())?;
+    conn.execute(
+        "INSERT INTO preferences (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+pub fn get_pref(key: &str) -> Result<Option<String>> {
+    let conn = Connection::open(db_path())?;
+    let mut stmt = conn.prepare("SELECT value FROM preferences WHERE key = ?1")?;
+    let result = stmt.query_row(params![key], |row| row.get(0)).ok();
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_and_get_pref() {
+        set_pref("test_key", "test_value").unwrap();
+        let val = get_pref("test_key").unwrap();
+        assert_eq!(val, Some("test_value".to_string()));
+    }
+
+    #[test]
+    fn test_overwrite_pref() {
+        set_pref("model", "llama3.1:8b").unwrap();
+        set_pref("model", "qwen2.5:3b").unwrap();
+        let val = get_pref("test_key").unwrap();
+        assert_eq!(val, Some("qwen2.5:3b".to_string()));
+    }
+
+    #[test]
+    fn test_missing_key_returns_none() {
+        let val = get_pref("nonexistent_key_xyz").unwrap();
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn test_init_db_is_idempotent() {
+        // calling twice should not panic or error
+        init_db().unwrap();
+        init_db().unwrap();
+    }
 }
