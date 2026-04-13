@@ -17,6 +17,7 @@
   let isLoading = $state(false);
   let errorMessage = $state('');
   let copiedIndex = $state(-1);
+  let ollamaOffline = $state(false);
   
   /** @type {AbortController | null} */
   let currentAbortController = $state(null);
@@ -497,21 +498,31 @@
     return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   }
 
+  async function tryFetchModels() {
+    try {
+      const ollamaUrl = localStorage.getItem('lume_ollama_url') || 'http://localhost:11434';
+      const ping = await fetch(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
+      if (!ping.ok) throw new Error('bad status');
+      const m = await fetchModels();
+      models = m;
+      ollamaOffline = false;
+      if (models.length > 0) {
+        selectedModel = models[0].name;
+        errorMessage = '';
+      }
+    } catch {
+      ollamaOffline = true;
+      models = [];
+    }
+  }
+
   onMount(() => {
     // Load user name from app_settings; fall back to 'User'
     invoke('get_setting', { key: 'user_name' })
       .then((n) => { if (n) userName = /** @type {string} */ (n); })
       .catch((e) => console.error('[onMount] get_setting failed:', e));
 
-    fetchModels().then((m) => {
-      models = m;
-      if (models.length > 0) {
-        selectedModel = models[0].name;
-        errorMessage = '';
-      } else {
-        errorMessage = "No models found. Is Ollama running?";
-      }
-    });
+    tryFetchModels();
     
     // Theming logic
     isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1031,10 +1042,72 @@
 
       <div class="max-w-3xl mx-auto w-full flex flex-col space-y-6 pb-6">
         {#if messages.length === 0 && !errorMessage}
-          <div class="m-auto flex flex-col items-center justify-center opacity-40 pt-24">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            <p class="text-[15px] font-medium">Hello there. How can I help you today?</p>
-          </div>
+          {#if ollamaOffline}
+            <!-- STATE: Ollama offline -->
+            <div class="m-auto flex flex-col items-center justify-center text-center px-6 max-w-sm">
+              <div class="w-14 h-14 rounded-2xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center mb-5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </div>
+              <h2 class="text-[17px] font-semibold text-gray-800 dark:text-gray-100 mb-2">Can't connect to Ollama</h2>
+              <p class="text-[13px] text-gray-500 dark:text-gray-400 mb-1">Make sure Ollama is running at</p>
+              <code class="text-[12px] bg-gray-100 dark:bg-[#161b22] text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-lg mb-5 border border-gray-200 dark:border-gray-700">
+                {localStorage.getItem('lume_ollama_url') || 'http://localhost:11434'}
+              </code>
+              <button
+                onclick={tryFetchModels}
+                class="flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[13px] font-semibold rounded-xl transition-all active:scale-95 shadow-sm mb-6"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+                <span>Retry Connection</span>
+              </button>
+              <p class="text-[11px] text-gray-400 dark:text-gray-500">Don't have Ollama? Visit <span class="text-emerald-500 font-medium">ollama.com</span></p>
+            </div>
+
+          {:else if models.length === 0}
+            <!-- STATE: Ollama online but no models -->
+            <div class="m-auto flex flex-col items-center justify-center text-center px-6 max-w-sm">
+              <div class="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <h2 class="text-[17px] font-semibold text-gray-800 dark:text-gray-100 mb-2">No models installed</h2>
+              <p class="text-[13px] text-gray-500 dark:text-gray-400 mb-4">Pull your first model to get started. Open a terminal and run:</p>
+              <div class="w-full bg-gray-100 dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 mb-5 text-left">
+                <p class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-1.5">Terminal</p>
+                <code class="text-[13px] text-emerald-600 dark:text-emerald-400 font-mono">ollama pull gemma3:4b</code>
+              </div>
+              <button
+                onclick={tryFetchModels}
+                class="flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[13px] font-semibold rounded-xl transition-all active:scale-95 shadow-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+                <span>Check Again</span>
+              </button>
+            </div>
+
+          {:else}
+            <!-- STATE: Normal new chat -->
+            <div class="m-auto flex flex-col items-center justify-center text-center px-6 max-w-lg">
+              <img src={lumeFireLogo} alt="Lume" class="h-12 w-12 object-contain mb-5 filter drop-shadow-[0_0_16px_rgba(16,185,129,0.5)]">
+              <h2 class="text-[22px] font-semibold text-gray-800 dark:text-gray-100 mb-1.5">What can I help you with?</h2>
+              <p class="text-[13px] text-gray-400 dark:text-gray-500 mb-8">Using <span class="text-emerald-500 font-medium">{selectedModel}</span></p>
+              <div class="grid grid-cols-2 gap-2.5 w-full">
+                {#each [
+                  { icon: '✍️', label: 'Write something', prompt: 'Help me write ' },
+                  { icon: '⌨️', label: 'Help me code', prompt: 'Help me code ' },
+                  { icon: '💡', label: 'Explain a concept', prompt: 'Explain ' },
+                  { icon: '📊', label: 'Analyze something', prompt: 'Analyze ' }
+                ] as chip}
+                  <button
+                    onclick={() => { prompt = chip.prompt; tick().then(() => { adjustTextareaHeight(); textareaRef?.focus(); }); }}
+                    class="flex items-center space-x-2.5 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161b22] hover:border-emerald-400 dark:hover:border-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition-all text-left group"
+                  >
+                    <span class="text-[18px]">{chip.icon}</span>
+                    <span class="text-[13px] font-medium text-gray-600 dark:text-gray-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">{chip.label}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
         {/if}
 
         {#each messages as msg, i}
