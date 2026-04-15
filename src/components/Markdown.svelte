@@ -16,10 +16,10 @@
         const lang = token.lang || 'text';
         const highlighted = hljs.getLanguage(lang) ? hljs.highlight(token.text, { language: lang }).value : hljs.highlightAuto(token.text).value;
         return `
-          <div class="relative group my-4 rounded-xl bg-[#0d1117] border border-gray-800 shadow-sm overflow-hidden">
-            <div class="flex items-center justify-between px-4 py-2 bg-[#161b22] text-xs text-gray-400 font-sans border-b border-gray-800/60 transition-colors">
+          <div class="relative group my-4 rounded-xl bg-[var(--code-bg)] border border-[var(--border-color)] shadow-sm overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2 bg-[var(--code-header-bg)] text-xs text-[var(--text-secondary)] font-sans border-b border-[var(--border-color)] transition-colors">
               <span>${lang}</span>
-              <button class="copy-code-btn flex items-center space-x-1.5 hover:text-white transition-colors bg-transparent border-none cursor-pointer" aria-label="Copy code">
+              <button class="copy-code-btn flex items-center space-x-1.5 hover:text-[var(--text-primary)] transition-colors bg-transparent border-none cursor-pointer" aria-label="Copy code">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 <span>Copy</span>
               </button>

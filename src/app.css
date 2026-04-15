@@ -3,33 +3,201 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-app: #f5f5f5;
+    --bg-surface: #ffffff;
+    --bg-muted: #f1f3f4;
+    --bg-elevated: #fafafa;
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --border-color: #e5e7eb;
+    --hover-color: #e9ecef;
+    --accent-color: #10b981;
+    --code-bg: #f3f4f6;
+    --code-header-bg: #e5e7eb;
+    --settings-page-bg: #f7f7f8;
+    --settings-surface: #ffffff;
+    --settings-control-bg: #ffffff;
+    --settings-border: #e5e7eb;
+    --settings-divider: #ededee;
+    --settings-text-primary: #161616;
+    --settings-text-secondary: #6a6a6f;
+    --settings-row-hover: #f2f2f3;
+    --settings-accent: #16a34a;
+    --settings-switch-off: #d4d4d8;
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-[#0d1117] dark:text-gray-100;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+  }
+
+  body.dark {
+    --bg-app: #151515;
+    --bg-surface: #1f1f1f;
+    --bg-muted: #2a2a2a;
+    --bg-elevated: #242424;
+    --text-primary: #f3f4f6;
+    --text-secondary: #9ca3af;
+    --border-color: #383838;
+    --hover-color: #2f2f2f;
+    --accent-color: #10b981;
+    --code-bg: #161b22;
+    --code-header-bg: #0d1117;
+    --settings-page-bg: #151515;
+    --settings-surface: #1f1f1f;
+    --settings-control-bg: #242424;
+    --settings-border: #343434;
+    --settings-divider: #2d2d2d;
+    --settings-text-primary: #f5f5f5;
+    --settings-text-secondary: #a1a1aa;
+    --settings-row-hover: #292929;
+    --settings-accent: #22c55e;
+    --settings-switch-off: #52525b;
   }
 }
 
-/* Settings modal entrance animations */
-.settings-backdrop-enter {
-  animation: settings-fade-in 200ms ease-out forwards;
-}
-.settings-modal-enter {
-  animation: settings-slide-up 200ms ease-out forwards;
+@layer components {
+  .settings-row {
+    @apply flex items-center justify-between gap-4 py-3 border-b;
+    border-color: var(--settings-divider);
+  }
+
+  .settings-row.compact {
+    @apply py-2.5;
+  }
+
+  .settings-row-copy {
+    @apply min-w-0;
+  }
+
+  .settings-row-title {
+    @apply text-[13px] font-medium;
+    color: var(--settings-text-primary);
+  }
+
+  .settings-row-subtitle {
+    @apply text-[12px] mt-0.5;
+    color: var(--settings-text-secondary);
+  }
+
+  .settings-switch {
+    @apply relative w-10 h-6 rounded-full transition-colors shrink-0;
+    background: var(--settings-switch-off);
+  }
+
+  .settings-switch.is-on {
+    background: var(--settings-accent);
+  }
+
+  .settings-switch-knob {
+    @apply absolute left-[2px] top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-transform;
+  }
+
+  .settings-switch.is-on .settings-switch-knob {
+    transform: translateX(16px);
+  }
+
+  .settings-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em];
+    color: var(--settings-text-secondary);
+  }
+
+  .settings-field {
+    @apply space-y-2;
+  }
+
+  .settings-input {
+    @apply h-10 w-full rounded-md border px-3 text-[13px] focus:outline-none;
+    background: var(--settings-control-bg);
+    color: var(--settings-text-primary);
+    border-color: var(--settings-border);
+  }
+
+  .settings-input:focus {
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+    border-color: var(--settings-accent);
+  }
+
+  .settings-input.danger {
+    border-color: #ef4444;
+    color: #dc2626;
+  }
+
+  .settings-segment-group {
+    @apply space-y-2;
+  }
+
+  .settings-segment {
+    @apply inline-flex rounded-md border p-0.5;
+    border-color: var(--settings-border);
+    background: var(--settings-control-bg);
+  }
+
+  .settings-segment-item {
+    @apply px-3.5 py-1.5 rounded text-[12px] font-medium transition-colors;
+    color: var(--settings-text-secondary);
+  }
+
+  .settings-segment-item:hover {
+    background: var(--settings-row-hover);
+    color: var(--settings-text-primary);
+  }
+
+  .settings-segment-item.is-active {
+    background: var(--settings-row-hover);
+    color: var(--settings-text-primary);
+  }
+
+  .settings-metric {
+    @apply rounded-md border p-3 text-center;
+    border-color: var(--settings-border);
+    background: var(--settings-surface);
+  }
+
+  .settings-metric-value {
+    @apply block text-[18px] font-semibold leading-tight;
+    color: var(--settings-text-primary);
+  }
+
+  .settings-metric-label {
+    @apply block text-[11px] mt-1;
+    color: var(--settings-text-secondary);
+  }
+
+  .settings-danger {
+    @apply rounded-md border p-4 space-y-3;
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.08);
+  }
+
+  .settings-danger-btn {
+    @apply h-9 px-4 rounded-md text-[12px] font-medium text-white bg-red-600 hover:bg-red-700 transition-colors;
+  }
+
+  .settings-danger-btn.confirm {
+    @apply bg-red-700 hover:bg-red-800 disabled:bg-red-300 disabled:cursor-not-allowed;
+  }
+
+  .settings-cancel-btn {
+    @apply h-9 px-4 rounded-md border text-[12px] font-medium transition-colors;
+    border-color: var(--settings-border);
+    color: var(--settings-text-secondary);
+    background: var(--settings-control-bg);
+  }
+
+  .settings-cancel-btn:hover {
+    background: var(--settings-row-hover);
+    color: var(--settings-text-primary);
+  }
+
+  .settings-tag {
+    @apply text-[11px] px-2 py-0.5 rounded;
+    background: var(--settings-row-hover);
+    color: var(--settings-text-secondary);
+  }
 }
 
-@keyframes settings-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-@keyframes settings-slide-up {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
 
 /* Custom range slider thumb — emerald accent */
 input[type="range"]::-webkit-slider-thumb {
@@ -57,18 +225,3 @@ body.dark {
   color-scheme: dark;
 }
 
-/* ── v0.6.0 Smooth Animations ── */
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-.animate-fade-in-up {
-  animation: fade-in-up 200ms ease-out forwards;
-}
-.animate-fade-in {
-  animation: fade-in 150ms ease-out forwards;
-}

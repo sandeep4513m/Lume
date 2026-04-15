@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { createJsonlStreamParser } from '$lib/jsonlStream.js';
 
   /** @type {{ isOpen?: boolean, onClose?: () => void, onModelSelect?: (model: string) => void }} */
   let { isOpen = false, onClose = () => {}, onModelSelect = (_model) => {} } = $props();
@@ -88,7 +89,7 @@
   /** @param {string} paramStr */
   function paramBadgeColor(paramStr) {
     const match = paramStr?.match(/([\d.]+)\s*([BbMm])/);
-    if (!match) return 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400';
+    if (!match) return 'bg-[var(--bg-muted)] text-[var(--text-secondary)]';
     let b = parseFloat(match[1]);
     if (match[2].toLowerCase() === 'm') b /= 1000;
     if (b <= 3) return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400';
@@ -144,6 +145,7 @@
       const reader = res.body?.getReader();
       if (!reader) throw new Error('NO_STREAM');
       const decoder = new TextDecoder();
+      const jsonl = createJsonlStreamParser();
 
       while (true) {
         let chunk;
@@ -156,23 +158,25 @@
 
         if (chunk.done) break;
 
-        const lines = decoder.decode(chunk.value, { stream: true }).split('\n').filter(Boolean);
-        for (const line of lines) {
-          try {
-            const json = JSON.parse(line);
+        const text = decoder.decode(chunk.value, { stream: true });
+        const events = jsonl.push(text);
+        for (const json of events) {
+          // Ollama sends error field on disk full or bad model name
+          if (json?.error) throw new Error(`OLLAMA_ERROR:${json.error}`);
 
-            // Ollama sends error field on disk full or bad model name
-            if (json.error) throw new Error(`OLLAMA_ERROR:${json.error}`);
-
-            if (json.status) downloadStatus = json.status;
-            if (json.total && json.completed) {
-              downloadProgress = Math.round((json.completed / json.total) * 100);
-            }
-          } catch (parseErr) {
-            const parseMessage = parseErr instanceof Error ? parseErr.message : String(parseErr);
-            if (parseMessage.startsWith('OLLAMA_ERROR:')) throw parseErr;
-            // partial JSON line — ignore
+          if (json?.status) downloadStatus = json.status;
+          if (json?.total && json?.completed) {
+            downloadProgress = Math.round((json.completed / json.total) * 100);
           }
+        }
+      }
+
+      // Drain any remaining buffered JSONL line (best-effort)
+      for (const json of jsonl.flush()) {
+        if (json?.error) throw new Error(`OLLAMA_ERROR:${json.error}`);
+        if (json?.status) downloadStatus = json.status;
+        if (json?.total && json?.completed) {
+          downloadProgress = Math.round((json.completed / json.total) * 100);
         }
       }
 
@@ -260,15 +264,15 @@
 
 {#if isOpen}
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" role="presentation" onclick={onClose} onkeydown={(e) => e.key === 'Escape' && onClose()}>
-  <div class="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white dark:bg-[#0d1117] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden"
+<div class="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4" role="presentation" onclick={onClose} onkeydown={(e) => e.key === 'Escape' && onClose()}>
+  <div class="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-[var(--bg-surface)] rounded-2xl shadow-2xl border border-[var(--border-color)] overflow-hidden"
     role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
 
     <!-- Header -->
-    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--border-color)] shrink-0">
       <div>
-        <h2 class="text-[16px] font-bold text-gray-900 dark:text-gray-100">Model Manager</h2>
-        <p class="text-[12px] text-gray-400 mt-0.5">
+        <h2 class="text-[16px] font-bold text-[var(--text-primary)]">Model Manager</h2>
+        <p class="text-[12px] text-[var(--text-secondary)] mt-0.5">
           {#if hardware}
             {Math.round(hardware.total_ram_mb / 1024)}GB RAM
             {#if hardware.vram_mb > 0}· {Math.round(hardware.vram_mb / 1024)}GB VRAM{/if}
@@ -280,24 +284,24 @@
       </div>
       <div class="flex items-center gap-2">
         <button onclick={fetchModels} title="Refresh"
-          class="p-2 rounded-lg text-gray-400 hover:text-emerald-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+          class="p-2 rounded-lg text-[var(--text-secondary)] hover:text-emerald-500 hover:bg-[var(--hover-color)] transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 {isLoading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
         </button>
         <button onclick={onClose} title="Close"
-          class="p-2 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+          class="p-2 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-color)] transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
     </div>
 
     <!-- Tabs -->
-    <div class="flex px-6 pt-3 gap-1 border-b border-gray-100 dark:border-gray-800 shrink-0">
+    <div class="flex px-6 pt-3 gap-1 border-b border-[var(--border-color)] shrink-0">
       {#each TABS as tab}
         <button onclick={() => activeTab = tab.id}
           class="px-4 py-2 text-[13px] font-medium rounded-t-lg transition-colors border-b-2 -mb-px
             {activeTab === tab.id
               ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-              : 'border-transparent text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}">
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}">
           {tab.label}
           {#if tab.id === 'installed' && models.length > 0}
             <span class="ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">{models.length}</span>
@@ -320,7 +324,7 @@
     {/if}
 
     <!-- Body -->
-    <div class="flex-1 overflow-y-auto px-4 py-3">
+    <div class="flex-1 overflow-y-auto px-4 py-3 bg-[var(--bg-surface)]">
 
       <!-- ── INSTALLED TAB ── -->
       {#if activeTab === 'installed'}

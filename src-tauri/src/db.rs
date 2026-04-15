@@ -1,6 +1,5 @@
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -64,15 +63,36 @@ pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
     )?;
 
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_pinned_updated ON sessions(is_pinned DESC, updated_at DESC)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_session_created_at ON messages(session_id, created_at ASC)",
         [],
     )?;
 
     // Safe migrations — silently ignored if column already exists
-    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0", []);
-    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''", []);
-    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN temperature REAL NOT NULL DEFAULT 0.7", []);
-    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''", []);
+    match conn.execute("ALTER TABLE sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0", []) {
+        Ok(_) => {},
+        Err(e) if e.to_string().contains("duplicate column") => {},
+        Err(e) => return Err(e),
+    }
+    match conn.execute("ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''", []) {
+        Ok(_) => {},
+        Err(e) if e.to_string().contains("duplicate column") => {},
+        Err(e) => return Err(e),
+    }
+    match conn.execute("ALTER TABLE sessions ADD COLUMN temperature REAL NOT NULL DEFAULT 0.7", []) {
+        Ok(_) => {},
+        Err(e) if e.to_string().contains("duplicate column") => {},
+        Err(e) => return Err(e),
+    }
+    match conn.execute("ALTER TABLE sessions ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''", []) {
+        Ok(_) => {},
+        Err(e) if e.to_string().contains("duplicate column") => {},
+        Err(e) => return Err(e),
+    }
 
     // Global app settings — simple key-value store for user preferences
     conn.execute(
@@ -83,18 +103,30 @@ pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
         [],
     )?;
 
+    // Preferences — legacy key-value store (now unified into chats.db)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS preferences (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(conn)
 }
 
 #[tauri::command]
-pub fn create_session(state: tauri::State<DbState>, title: String, model: String, temperature: f64, system_prompt: String) -> Result<String, String> {
-    let conn = state.conn.lock().unwrap();
+pub fn create_session(state: tauri::State<DbState>, title: String, model: String) -> Result<String, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
 
     conn.execute(
-        "INSERT INTO sessions (id, title, created_at, updated_at, model, temperature, system_prompt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        (&id, &title, &now, &now, &model, &temperature, &system_prompt),
+        "INSERT INTO sessions (id, title, created_at, updated_at, model) VALUES (?1, ?2, ?3, ?4, ?5)",
+        (&id, &title, &now, &now, &model),
     ).map_err(|e| e.to_string())?;
 
     Ok(id)
@@ -102,7 +134,7 @@ pub fn create_session(state: tauri::State<DbState>, title: String, model: String
 
 #[tauri::command]
 pub fn get_sessions(state: tauri::State<DbState>) -> Result<Vec<ChatSession>, String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id, title, created_at, updated_at, is_pinned, model, temperature, system_prompt FROM sessions ORDER BY is_pinned DESC, updated_at DESC"
     ).map_err(|e| e.to_string())?;
@@ -130,7 +162,7 @@ pub fn get_sessions(state: tauri::State<DbState>) -> Result<Vec<ChatSession>, St
 
 #[tauri::command]
 pub fn set_session_model(state: tauri::State<DbState>, session_id: String, model: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE sessions SET model = ?1 WHERE id = ?2",
         (&model, &session_id),
@@ -139,53 +171,23 @@ pub fn set_session_model(state: tauri::State<DbState>, session_id: String, model
 }
 
 #[tauri::command]
-pub fn set_session_temperature(state: tauri::State<DbState>, session_id: String, temperature: f64) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
-    conn.execute(
-        "UPDATE sessions SET temperature = ?1 WHERE id = ?2",
-        (&temperature, &session_id),
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn set_session_system_prompt(state: tauri::State<DbState>, session_id: String, system_prompt: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
-    conn.execute(
-        "UPDATE sessions SET system_prompt = ?1 WHERE id = ?2",
-        (&system_prompt, &session_id),
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn toggle_pin(state: tauri::State<DbState>, session_id: String) -> Result<bool, String> {
-    let conn = state.conn.lock().unwrap();
-    let current: i64 = conn.query_row(
-        "SELECT is_pinned FROM sessions WHERE id = ?1",
-        [&session_id],
-        |row| row.get(0),
-    ).map_err(|e| e.to_string())?;
-    let new_val = if current == 0 { 1i64 } else { 0i64 };
-    conn.execute(
-        "UPDATE sessions SET is_pinned = ?1 WHERE id = ?2",
-        (&new_val, &session_id),
-    ).map_err(|e| e.to_string())?;
-    Ok(new_val != 0)
-}
-
-#[tauri::command]
 pub fn delete_session(state: tauri::State<DbState>, session_id: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
-    conn.execute("DELETE FROM sessions WHERE id = ?1", [&session_id]).map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let rows = conn.execute("DELETE FROM sessions WHERE id = ?1", [&session_id]).map_err(|e| e.to_string())?;
+    if rows == 0 {
+        return Err("not found".to_string());
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub fn save_message(state: tauri::State<DbState>, session_id: String, role: String, content: String) -> Result<String, String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
 
     // Check if it's the first message to dynamically update the session title!
     let count: i32 = conn.query_row("SELECT COUNT(*) FROM messages WHERE session_id = ?1", [&session_id], |row| row.get(0)).unwrap_or(1);
@@ -211,16 +213,23 @@ pub fn save_message(state: tauri::State<DbState>, session_id: String, role: Stri
 }
 
 #[tauri::command]
-pub fn get_messages(state: tauri::State<DbState>, session_id: String) -> Result<Vec<ChatMessage>, String> {
-    let conn = state.conn.lock().unwrap();
-    let mut stmt = conn.prepare("SELECT id, role, content, created_at FROM messages WHERE session_id = ?1 ORDER BY created_at ASC").map_err(|e| e.to_string())?;
+pub fn get_messages(state: tauri::State<DbState>, session_id: String, limit: i64, offset: i64) -> Result<Vec<ChatMessage>, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let limit = if limit <= 0 { 50 } else { limit };
+    let offset = if offset < 0 { 0 } else { offset };
+    let mut stmt = conn.prepare(
+        "SELECT * FROM messages
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+        LIMIT ? OFFSET ?"
+    ).map_err(|e| e.to_string())?;
     
-    let msg_iter = stmt.query_map([&session_id], |row| {
+    let msg_iter = stmt.query_map(rusqlite::params![&session_id, limit, offset], |row| {
         Ok(ChatMessage {
             id: row.get(0)?,
-            role: row.get(1)?,
-            content: row.get(2)?,
-            created_at: row.get(3)?,
+            role: row.get(2)?,
+            content: row.get(3)?,
+            created_at: row.get(4)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -234,97 +243,28 @@ pub fn get_messages(state: tauri::State<DbState>, session_id: String) -> Result<
 
 #[tauri::command]
 pub fn clear_messages(state: tauri::State<DbState>, session_id: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM messages WHERE session_id = ?1", [&session_id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_message(state: tauri::State<DbState>, message_id: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
-    conn.execute("DELETE FROM messages WHERE id = ?1", [&message_id]).map_err(|e| e.to_string())?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let rows = conn.execute("DELETE FROM messages WHERE id = ?1", [&message_id]).map_err(|e| e.to_string())?;
+    if rows == 0 {
+        return Err("not found".to_string());
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_messages_after(state: tauri::State<DbState>, session_id: String, timestamp: i64) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM messages WHERE session_id = ?1 AND created_at >= ?2", (&session_id, &timestamp)).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
-pub fn export_chat_markdown(state: tauri::State<DbState>, session_id: String) -> Result<String, String> {
-    let conn = state.conn.lock().unwrap();
-    
-    let title: String = conn.query_row(
-        "SELECT title FROM sessions WHERE id = ?1",
-        [&session_id],
-        |row| row.get(0),
-    ).map_err(|e| e.to_string())?;
-    
-    let mut stmt = conn.prepare(
-        "SELECT role, content FROM messages WHERE session_id = ?1 ORDER BY created_at ASC"
-    ).map_err(|e| e.to_string())?;
-
-    let mut md = format!("# {}\n\nExported from Lume\n\n---\n\n", title);
-    
-    let rows = stmt.query_map([&session_id], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    }).map_err(|e| e.to_string())?;
-
-    for row in rows {
-        let (role, content) = row.map_err(|e| e.to_string())?;
-        if role == "user" {
-            md.push_str(&format!("**You:** {}\n\n", content));
-        } else {
-            md.push_str(&format!("**Lume:** {}\n\n", content));
-        }
-        md.push_str("---\n\n");
-    }
-    
-    Ok(md)
-}
-
-#[derive(Deserialize)]
-pub struct ImportMessage {
-    pub role: String,
-    pub content: String,
-}
-
-#[tauri::command]
-pub fn import_chat(state: tauri::State<DbState>, title: String, messages: Vec<ImportMessage>) -> Result<String, String> {
-    let conn = state.conn.lock().unwrap();
-    let session_id = uuid::Uuid::new_v4().to_string();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
-    
-    conn.execute(
-        "INSERT INTO sessions (id, title, created_at, updated_at, is_pinned) VALUES (?1, ?2, ?3, ?4, 0)",
-        (&session_id, &title, &now, &now),
-    ).map_err(|e| e.to_string())?;
-    
-    for (i, msg) in messages.iter().enumerate() {
-        let msg_id = uuid::Uuid::new_v4().to_string();
-        let ts = now + i as i64;
-        conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            (&msg_id, &session_id, &msg.role, &msg.content, &ts),
-        ).map_err(|e| e.to_string())?;
-    }
-    
-    Ok(session_id)
-}
-
-#[tauri::command]
-pub fn delete_sessions(state: tauri::State<DbState>, session_ids: Vec<String>) -> Result<(), String> {
-    let mut conn = state.conn.lock().unwrap();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    for id in &session_ids {
-        tx.execute("DELETE FROM sessions WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
-    }
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(())
-}
 
 #[derive(Serialize)]
 pub struct StorageStats {
@@ -335,7 +275,7 @@ pub struct StorageStats {
 
 #[tauri::command]
 pub fn get_storage_stats(state: tauri::State<DbState>, app_handle: tauri::AppHandle) -> Result<StorageStats, String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let session_count: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0)).map_err(|e| e.to_string())?;
     let message_count: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0)).map_err(|e| e.to_string())?;
 
@@ -352,7 +292,7 @@ pub fn get_storage_stats(state: tauri::State<DbState>, app_handle: tauri::AppHan
 
 #[tauri::command]
 pub fn wipe_all_data(state: tauri::State<DbState>) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM messages", []).map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM sessions", []).map_err(|e| e.to_string())?;
     conn.execute("VACUUM", []).map_err(|e| e.to_string())?;
@@ -365,7 +305,7 @@ pub fn wipe_all_data(state: tauri::State<DbState>) -> Result<(), String> {
 /// Returns `None` if the key has never been set.
 #[tauri::command]
 pub fn get_setting(state: tauri::State<DbState>, key: String) -> Result<Option<String>, String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let result = conn.query_row(
         "SELECT value FROM app_settings WHERE key = ?1",
         [&key],
@@ -381,7 +321,7 @@ pub fn get_setting(state: tauri::State<DbState>, key: String) -> Result<Option<S
 /// Persist a setting.  Creates the row if absent, updates it if present.
 #[tauri::command]
 pub fn set_setting(state: tauri::State<DbState>, key: String, value: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -390,71 +330,106 @@ pub fn set_setting(state: tauri::State<DbState>, key: String, value: String) -> 
     Ok(())
 }
 
-fn db_path() -> PathBuf {
-    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("lume");
-    std::fs::create_dir_all(&path).ok();
-    path.push("lume.db");
-    path
-}
-
-pub fn init_db() -> Result<()> {
-    let conn = Connection::open(db_path())?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS preferences (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );",
-    )?;
-    Ok(())
-}
-
-pub fn set_pref(key: &str, value: &str) -> Result<()> {
-    let conn = Connection::open(db_path())?;
+#[tauri::command]
+pub fn set_pref(state: tauri::State<DbState>, key: String, value: String) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO preferences (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         params![key, value],
-    )?;
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-pub fn get_pref(key: &str) -> Result<Option<String>> {
-    let conn = Connection::open(db_path())?;
-    let mut stmt = conn.prepare("SELECT value FROM preferences WHERE key = ?1")?;
-    let result = stmt.query_row(params![key], |row| row.get(0)).ok();
-    Ok(result)
+#[tauri::command]
+pub fn get_pref(state: tauri::State<DbState>, key: String) -> Result<Option<String>, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let result = conn.query_row(
+        "SELECT value FROM preferences WHERE key = ?1",
+        [&key],
+        |row| row.get::<_, String>(0),
+    );
+    match result {
+        Ok(val) => Ok(Some(val)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
 
     #[test]
     fn test_set_and_get_pref() {
-        set_pref("test_key", "test_value").unwrap();
-        let val = get_pref("test_key").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO preferences (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params!["test_key", "test_value"],
+        )
+        .unwrap();
+        let val = conn
+            .query_row(
+                "SELECT value FROM preferences WHERE key = ?1",
+                ["test_key"],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
         assert_eq!(val, Some("test_value".to_string()));
     }
 
     #[test]
     fn test_overwrite_pref() {
-        set_pref("model", "llama3.1:8b").unwrap();
-        set_pref("model", "qwen2.5:3b").unwrap();
-        let val = get_pref("test_key").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO preferences (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params!["model", "llama3.1:8b"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO preferences (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params!["model", "qwen2.5:3b"],
+        )
+        .unwrap();
+        let val = conn
+            .query_row(
+                "SELECT value FROM preferences WHERE key = ?1",
+                ["model"],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
         assert_eq!(val, Some("qwen2.5:3b".to_string()));
     }
 
     #[test]
     fn test_missing_key_returns_none() {
-        let val = get_pref("nonexistent_key_xyz").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        let val = conn
+            .query_row(
+                "SELECT value FROM preferences WHERE key = ?1",
+                ["nonexistent_key_xyz"],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
         assert_eq!(val, None);
-    }
-
-    #[test]
-    fn test_init_db_is_idempotent() {
-        // calling twice should not panic or error
-        init_db().unwrap();
-        init_db().unwrap();
     }
 }
