@@ -1,9 +1,11 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { fetchModels, sendMessage } from '$lib/ollama.js';
+  import { fetchModels, sendMessage, extractThink } from '$lib/ollama.js';
   import Markdown from '../components/Markdown.svelte';
   import Settings from '../components/Settings.svelte';
+  import LumeCodex from '../components/LumeCodex.svelte';
+  import ThinkingProcess from '../components/ThinkingProcess.svelte';
   import lumeFireLogo from '$lib/assets/lume-icon.png';
 
   /** @type {any[]} */
@@ -21,6 +23,7 @@
   /** @type {AbortController | null} */
   let currentAbortController = $state(null);
   let isStreamingEnabled = $state(true);
+  let isThinkingEnabled = $state(true);
 
   // Sidebar Multi-Session State
   /** @type {any[]} */
@@ -36,6 +39,7 @@
   // ── User Profile State ────────────────────────────────────────
   let userName = $state('User');
   let isUserMenuOpen = $state(false);
+  let isCodexOpen = $state(false);
   let userInitials = $derived(
     userName
       .trim()
@@ -341,7 +345,16 @@
     isLoading = false;
     errorMessage = '';
     try {
-      messages = await invoke('get_messages', { sessionId: id });
+      const rawMessages = /** @type {any[]} */ (await invoke('get_messages', { sessionId: id }));
+      messages = rawMessages.map(m => {
+        if (m.role === 'ai' && m.content) {
+          const parsed = extractThink(m.content);
+          if (parsed.think_content) {
+            return { ...m, content: parsed.content, thinkContent: parsed.think_content, isThinkingFinished: true, isLoading: false };
+          }
+        }
+        return { ...m, isLoading: false };
+      });
 
       // Restore the model and temperature that was last used in this specific session.
       // Falls back to: localStorage default → first available model.
@@ -521,6 +534,10 @@
     const savedStreaming = localStorage.getItem('lume_streaming');
     if (savedStreaming !== null) isStreamingEnabled = savedStreaming === 'true';
 
+    // Setup initial thinking blocks preference
+    const savedThinking = localStorage.getItem('lume_show_thinking');
+    if (savedThinking !== null) isThinkingEnabled = savedThinking === 'true';
+
     // Load chat sessions from database — CRITICAL for sidebar and chat to work
     loadSessions();
   });
@@ -583,15 +600,19 @@
     }
     
     const aiIndex = messages.length;
-    messages.push({ role: 'ai', content: '', isLoading: true });
+    messages.push({ role: 'ai', content: '', thinkContent: '', isLoading: true, isThinkingFinished: false });
     if (showScrollButton) hasUnread = true;
     
     try {
-      const { text: finalText, evalCount } = await sendMessage(
+      const { text: finalText, thinkText: finalThinkText, evalCount } = await sendMessage(
         selectedModel, 
         currentPrompt, 
-        isStreamingEnabled ? (streamedText) => {
-          messages[aiIndex].content = streamedText;
+        isStreamingEnabled ? (chunkObj) => {
+          // Always update content fields from parsed stream
+          messages[aiIndex].content = chunkObj.content;
+          messages[aiIndex].thinkContent = chunkObj.think_content?.trim() || '';
+          messages[aiIndex].isThinkingFinished = chunkObj.isThinkingFinished;
+          // Clear the pending state as soon as we have ANY data from the stream
           messages[aiIndex].isLoading = false;
           if (!showScrollButton) setTimeout(scrollToBottom, 10);
         } : null,
@@ -602,23 +623,28 @@
       const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
       
       messages[aiIndex].content = finalText;
+      messages[aiIndex].thinkContent = finalThinkText;
+      messages[aiIndex].isThinkingFinished = true;
       messages[aiIndex].isLoading = false;
       messages[aiIndex].evalCount = evalCount;
       messages[aiIndex].responseTime = responseTime;
       
       try {
-        const id = await invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: finalText });
+        const rawTextForDB = finalThinkText ? `<think>\n${finalThinkText}\n</think>\n\n${finalText}` : finalText;
+        const id = await invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: rawTextForDB });
         messages[aiIndex].id = id;
         messages[aiIndex].created_at = Date.now();
         await loadSessions();
       } catch (err) { Object.seal(err); console.error(err); }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        const partialText = messages[aiIndex].content;
+        const partialText = messages[aiIndex].content || '';
+        const partialThink = messages[aiIndex].thinkContent || '';
         messages[aiIndex].isLoading = false;
-        if (partialText) {
+        if (partialText || partialThink) {
             try {
-              const id = await invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: partialText });
+              const rawTextForDB = partialThink ? `<think>\n${partialThink}\n</think>\n\n${partialText}` : partialText;
+              const id = await invoke('save_message', { sessionId: currentSessionId, role: 'ai', content: rawTextForDB });
               messages[aiIndex].id = id;
               messages[aiIndex].created_at = Date.now();
               await loadSessions();
@@ -956,15 +982,13 @@
               </svg>
               Get models
             </button>
-            <!-- Learn More -->
+            <!-- Learn More (Codex) -->
             <button
-              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left"
+              onclick={() => { isCodexOpen = true; isUserMenuOpen = false; }}
+              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left group"
             >
-              <!-- Lucide ExternalLink -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-[15px] h-[15px] text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-[15px] h-[15px] text-gray-400 shrink-0 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
               </svg>
               Learn more
               <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-gray-400 ml-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -1051,96 +1075,38 @@
               {msg.role === 'user' 
                 ? 'rounded-2xl max-w-[85%] shadow-sm bg-emerald-500 text-white rounded-br-none px-5 py-3.5 overflow-hidden' 
                 : 'w-full max-w-full text-gray-800 dark:text-gray-200 py-1'}">
-              
 
+              {#if msg.role === 'ai'}
+                <!-- ═══ AI Message Rendering: Pending → Thinking → Answering ═══ -->
 
-              {#if msg.isLoading}
-                <div class="flex space-x-1.5 items-center h-5">
-                  <div class="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce"></div>
-                  <div class="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
-                  <div class="w-2 h-2 bg-emerald-500/50 rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
-                </div>
-              {:else if msg.role === 'ai'}
-                
-                <!-- Thinking Block parsing -->
-                {#if msg.content.includes('<think>')}
-                  {@const parts = msg.content.split('</think>')}
-                  {@const thinkPart = parts[0].replace('<think>', '').trim()}
-                  {@const restPart = parts.length > 1 ? parts[1] : null}
-                  {@const isThinkStreaming = restPart === null}
-                  {@const isCollapsed = collapsedThinkBlocks.has(i)}
-                  
-                  <!-- Think block container -->
-                  <div class="mb-4 rounded-xl border overflow-hidden
-                    {isThinkStreaming
-                      ? 'border-violet-200/60 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/20'
-                      : 'border-gray-200/70 dark:border-[#2a303c] bg-gray-50/50 dark:bg-[#111822]/40'}
-                    backdrop-blur-sm">
-                    <!-- Clickable header row -->
-                    <button
-                      type="button"
-                      onclick={() => {
-                        const s = new Set(collapsedThinkBlocks);
-                        s.has(i) ? s.delete(i) : s.add(i);
-                        collapsedThinkBlocks = s;
-                      }}
-                      class="w-full flex items-center justify-between px-4 py-2.5 text-[13px] font-medium transition-colors select-none
-                        {isThinkStreaming
-                          ? 'text-violet-500 dark:text-violet-400 bg-violet-50/40 dark:bg-violet-950/30 hover:bg-violet-100/50 dark:hover:bg-violet-950/50'
-                          : 'text-gray-500 dark:text-gray-400 bg-white/40 dark:bg-[#0d1117]/20 hover:bg-white/60 dark:hover:bg-[#0d1117]/40 hover:text-gray-800 dark:hover:text-gray-200'}"
-                    >
-                      <div class="flex items-center space-x-2">
-                        <!-- Brain icon -->
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="{isThinkStreaming ? 'text-violet-400 animate-pulse' : 'text-violet-400 dark:text-violet-500'}"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>
-                        <span class="{isThinkStreaming ? 'text-violet-500 dark:text-violet-400' : 'text-violet-600 dark:text-violet-400'}">Thinking</span>
-                        {#if isThinkStreaming}
-                          <!-- Streaming dots -->
-                          <span class="flex space-x-0.5 items-center">
-                            <span class="w-1 h-1 bg-violet-400 rounded-full animate-bounce" style="animation-delay:0s"></span>
-                            <span class="w-1 h-1 bg-violet-400 rounded-full animate-bounce" style="animation-delay:0.15s"></span>
-                            <span class="w-1 h-1 bg-violet-400 rounded-full animate-bounce" style="animation-delay:0.3s"></span>
-                          </span>
-                        {:else}
-                          <span class="text-[11px] text-gray-400 dark:text-gray-500 font-normal">{thinkPart.trim().split(/\s+/).length} words</span>
-                        {/if}
-                      </div>
-                      <!-- Chevron: rotate-180 = pointing down (expanded), default = pointing up (collapsed) -->
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" 
-                        stroke-linecap="round" stroke-linejoin="round" 
-                        class="transition-transform duration-300 ease-in-out flex-shrink-0 {isCollapsed ? '' : 'rotate-180'} {isThinkStreaming ? 'text-violet-400' : 'text-gray-400'}"
-                      >
-                        <polyline points="18 15 12 9 6 15"></polyline>
-                      </svg>
-                    </button>
-
-                    <!-- Collapsible content -->
-                    {#if !isCollapsed}
-                      <div class="px-4 pb-4 pt-3 text-[13px] whitespace-pre-wrap border-t leading-relaxed font-mono
-                        {isThinkStreaming
-                          ? 'text-violet-600/80 dark:text-violet-300/60 border-violet-200/50 dark:border-violet-900/30'
-                          : 'text-gray-500 dark:text-gray-400 border-gray-200/60 dark:border-[#2a303c]/80'}"
-                      >
-                        {thinkPart}
-                        {#if isThinkStreaming}
-                          <span class="inline-block w-1.5 h-3.5 bg-violet-400 ml-0.5 animate-pulse rounded-sm" style="vertical-align: text-bottom"></span>
-                        {/if}
-                      </div>
-                    {/if}
+                <!-- Phase 1: Pending — waiting for first token -->
+                {#if msg.isLoading && !msg.thinkContent && !msg.content}
+                  <div class="flex items-center space-x-2 py-2 text-gray-400 dark:text-gray-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                    </svg>
+                    <span class="text-[13px] font-medium animate-pulse">Generating...</span>
                   </div>
-                  
-                  {#if restPart !== null && restPart.trim()}
-                    <Markdown content={restPart} />
-                  {/if}
-                {:else}
+                {/if}
+
+                <!-- Phase 2: Thinking — ThinkingProcess accordion (auto-shows when thinkContent exists) -->
+                {#if msg.thinkContent}
+                  <ThinkingProcess 
+                    thinkContent={msg.thinkContent} 
+                    isGenerating={isLoading && i === messages.length - 1} 
+                    showSetting={isThinkingEnabled} 
+                    isThinkingFinished={msg.isThinkingFinished ?? false} 
+                  />
+                {/if}
+
+                <!-- Phase 3: Answering — standard markdown content -->
+                {#if msg.content}
                   <Markdown content={msg.content} />
                 {/if}
                 
-                {#if msg.role === 'ai' && !msg.isLoading}
-                  <!-- Combined action + analytics row -->
+                <!-- Action row — only visible when generation is complete -->
+                {#if !msg.isLoading && (msg.content || msg.thinkContent)}
                   <div class="mt-4 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <!-- Left: action buttons -->
                     <div class="flex items-center space-x-0.5 text-gray-400 dark:text-gray-500">
                       <button onclick={() => handleCopy(msg.content, i)} class="p-1.5 hover:text-emerald-500 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-[#21262d]" title="Copy">
                         {#if copiedIndex === i}
@@ -1160,7 +1126,6 @@
                       </button>
                     </div>
 
-                    <!-- Right: analytics pushed to right -->
                     {#if msg.evalCount || msg.responseTime}
                       <div class="ml-auto flex items-center space-x-2 text-[11px] text-gray-400 dark:text-gray-600 font-medium">
                         {#if msg.responseTime}<span>{msg.responseTime}s</span>{/if}
@@ -1172,6 +1137,7 @@
                 {/if}
 
               {:else}
+                <!-- User message -->
                 <div class="whitespace-pre-wrap">{msg.content}</div>
               {/if}
             </div>
@@ -1585,6 +1551,9 @@
   </main>
 </div>
 
+<!-- Lume Codex Overlay -->
+<LumeCodex isOpen={isCodexOpen} onClose={() => isCodexOpen = false} />
+
 <!-- Settings Modal -->
 <Settings
   isOpen={isSettingsOpen}
@@ -1599,6 +1568,12 @@
     else document.body.classList.remove('dark');
   }}
   {isStreamingEnabled}
-  onStreamingChange={(enabled) => isStreamingEnabled = enabled}
+  onStreamingChange={(val) => {
+    isStreamingEnabled = val;
+  }}
+  showThinkingBlocks={isThinkingEnabled}
+  onThinkingChange={(val) => {
+    isThinkingEnabled = val;
+  }}
   onDataWiped={() => { loadSessions(); }}
 />

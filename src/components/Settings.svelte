@@ -13,6 +13,8 @@
    *   onThemeChange: (dark: boolean) => void,
    *   isStreamingEnabled: boolean,
    *   onStreamingChange: (enabled: boolean) => void,
+   *   showThinkingBlocks?: boolean,
+   *   onThinkingChange?: (enabled: boolean) => void,
    *   onDataWiped: () => void
    * }} 
    */
@@ -26,6 +28,8 @@
     onThemeChange = () => {},
     isStreamingEnabled = true,
     onStreamingChange = () => {},
+    showThinkingBlocks = true,
+    onThinkingChange = () => {},
     onDataWiped = () => {}
   } = $props();
 
@@ -47,7 +51,6 @@
   let defaultModel = $state('');
 
   // ── Chat Tab State ──
-  let showThinkingBlocks = $state(true);
   let showTokenCounter = $state(true);
   let showResponseTime = $state(true);
   let enterToSend = $state(true);
@@ -81,7 +84,7 @@
     defaultModel = localStorage.getItem('lume_default_model') || '';
 
     // Chat
-    showThinkingBlocks = localStorage.getItem('lume_show_thinking') !== 'false';
+    // showThinkingBlocks is driven by parent props
     showTokenCounter = localStorage.getItem('lume_show_tokens') !== 'false';
     showResponseTime = localStorage.getItem('lume_show_response_time') !== 'false';
     enterToSend = localStorage.getItem('lume_enter_to_send') !== 'false';
@@ -145,7 +148,7 @@
 
   /** @param {boolean} val */
   function handleThinkingToggle(val) {
-    showThinkingBlocks = val;
+    onThinkingChange(val);
     persist('lume_show_thinking', val);
   }
 
