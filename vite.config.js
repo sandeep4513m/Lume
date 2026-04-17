@@ -15,7 +15,8 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // THE FIX: Force 127.0.0.1 to prevent Windows localhost routing issues.
+    host: host || "127.0.0.1", 
     hmr: host
       ? {
           protocol: "ws",
