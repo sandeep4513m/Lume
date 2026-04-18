@@ -30,7 +30,7 @@
 </script>
 
 {#if showSetting && thinkContent}
-  <div class="mb-4 rounded-xl border border-violet-200/50 dark:border-violet-900/30 bg-violet-50/10 dark:bg-[#13111c]/50 backdrop-blur-sm overflow-hidden font-mono shadow-sm">
+  <div class="mb-4 rounded-xl border border-violet-200/50 dark:border-violet-900/30 bg-violet-50/10 dark:bg-[#13111c]/50 backdrop-blur-sm overflow-hidden shadow-sm">
     
     <button
       type="button"
@@ -38,7 +38,7 @@
         isExpanded = !isExpanded;
         manuallyToggled = true; // prevent auto-collapsing over the user's explicit choice
       }}
-      class="w-full flex items-center justify-between px-4 py-2.5 text-[13px] font-medium transition-colors select-none text-violet-600/80 dark:text-violet-400/80 hover:bg-violet-100/40 dark:hover:bg-violet-900/40"
+      class="w-full flex items-center justify-between px-4 py-2.5 text-[13px] font-medium font-sans transition-colors select-none text-violet-600/80 dark:text-violet-400/80 hover:bg-violet-100/40 dark:hover:bg-violet-900/40"
     >
       <div class="flex items-center space-x-2">
         <!-- Brain/Process icon -->
@@ -66,7 +66,7 @@
     </button>
 
     {#if isExpanded}
-      <div transition:slide={{ duration: 250 }} class="px-4 pb-4 pt-2 text-[13px] text-gray-600 dark:text-gray-400/90 leading-[1.6] whitespace-pre-wrap border-t border-violet-200/50 dark:border-violet-900/40 opacity-90 transition-opacity">
+      <div transition:slide={{ duration: 250 }} class="font-mono px-4 pb-4 pt-2 text-[13px] text-gray-600 dark:text-gray-400/90 leading-[1.6] whitespace-pre-wrap border-t border-violet-200/50 dark:border-violet-900/40 opacity-90 transition-opacity">
         {thinkContent}
         {#if isGenerating && !isThinkingFinished}
           <span class="inline-block w-1.5 h-3.5 bg-violet-500/80 ml-0.5 animate-pulse rounded-sm align-text-bottom"></span>

@@ -747,7 +747,7 @@
           <img src={lumeFireLogo} alt="Lume" class="h-6 w-6 object-contain scale-[1.45] filter drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
         </div>
         {#if !isSidebarCollapsed}
-          <span class="font-bold text-[17px] leading-none tracking-tight whitespace-nowrap text-gray-900 dark:text-white ml-0.5 mt-0.5">Lume</span>
+          <span class="font-semibold text-[17px] leading-none tracking-tight whitespace-nowrap text-gray-900 dark:text-white ml-0.5 mt-0.5">Lume</span>
         {/if}
       </div>
       {#if !isSidebarCollapsed}
@@ -835,7 +835,7 @@
                 {#if session.is_pinned}
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
                 {/if}
-                <span class="text-[13px] font-medium truncate leading-tight block pb-0.5 {session.id === currentSessionId ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-700 dark:text-gray-300'}">{session.title}</span>
+                <span class="text-[13px] truncate leading-tight block pb-0.5 tracking-tight {session.id === currentSessionId ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-medium text-gray-700 dark:text-gray-300'}">{session.title}</span>
               </div>
               <div class="flex items-center space-x-2">
                 <span class="text-[11px] text-gray-500 mt-0.5">{timeAgo(session.updated_at)}</span>
@@ -1019,7 +1019,7 @@
     <!-- Top Header -->
     <header class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 bg-white/50 dark:bg-[#0d1117]/50 backdrop-blur-md sticky top-0 z-20 transition-colors shrink-0 h-16">
       <div class="flex items-center space-x-3">
-         <span class="font-semibold text-gray-800 dark:text-gray-200">
+         <span class="font-semibold tracking-tight text-gray-800 dark:text-gray-200">
            {sessions.find(s => s.id === currentSessionId)?.title || "Lume Chat"}
          </span>
       </div>
