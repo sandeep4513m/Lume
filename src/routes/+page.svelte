@@ -1,12 +1,16 @@
 <script>
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+  import { shortcutStore } from "$lib/stores/shortcuts.svelte";
   import { fetchModels, sendMessage, extractThink } from "$lib/ollama.js";
   import Markdown from "../components/Markdown.svelte";
   import Settings from "../components/Settings.svelte";
   import LumeCodex from "../components/LumeCodex.svelte";
   import ThinkingProcess from "../components/ThinkingProcess.svelte";
   import lumeFireLogo from "$lib/assets/lume-icon.png";
+  import GovernorNotice from "../components/GovernorNotice.svelte";
+  import { governor } from "$lib/stores/governor.svelte";
 
   /** @type {any[]} */
   let models = $state([]);
@@ -37,8 +41,10 @@
   let hasUnread = $state(false);
 
   // ── User Profile State ────────────────────────────────────────
-  let userName = $state("User");
+  let userName = $state(localStorage.getItem("lume_user_name") || "User");
+  let userAvatarColor = $state(localStorage.getItem("lume_user_avatar_color") || "#10b981");
   let isUserMenuOpen = $state(false);
+  let isHeaderMenuOpen = $state(false);
   let isCodexOpen = $state(false);
   let userInitials = $derived(
     userName
@@ -114,8 +120,8 @@
     if (!currentSessionId) return;
     try {
       await invoke("set_session_system_prompt", {
-        sessionId: currentSessionId,
-        systemPrompt: p.prompt,
+        session_id: currentSessionId,
+        system_prompt: p.prompt,
       });
       const idx = sessions.findIndex((s) => s.id === currentSessionId);
       if (idx !== -1)
@@ -125,6 +131,15 @@
       errorMessage = "Failed to save personality.";
       setTimeout(() => (errorMessage = ""), 4000);
     }
+  }
+
+  /** @param {string} model */
+  async function handleModelChange(model) {
+    const decision = await governor.checkSwitch(model);
+    if (decision.type === "allow") {
+      selectedModel = model;
+    }
+    // if warn or critical, governor.pendingDecision is set → GovernorNotice renders
   }
 
   // Bulk select
@@ -137,6 +152,10 @@
   let showScrollButton = $state(false);
   let isDarkMode = $state(false);
   let isSettingsOpen = $state(false);
+  let searchInputRef = $state();
+  let zoomFactor = $state(1.0);
+  /** Shortcut ID to highlight when Settings opens to the Shortcuts tab (from Codex "Edit" button). */
+  let activeShortcutId = $state("");
   /** @type {Set<number>} - tracks which AI message indices have their think block collapsed */
   let collapsedThinkBlocks = $state(new Set());
 
@@ -370,7 +389,7 @@
         title: "New Chat",
         model: selectedModel,
         temperature: selectedTemperature,
-        systemPrompt: systemPrompt,
+        system_prompt: systemPrompt,
       });
       currentSessionId = newId;
       messages = [];
@@ -388,7 +407,7 @@
     errorMessage = "";
     try {
       const rawMessages = /** @type {any[]} */ (
-        await invoke("get_messages", { sessionId: id })
+        await invoke("get_messages", { session_id: id })
       );
       messages = rawMessages.map((m) => {
         if (m.role === "ai" && m.content) {
@@ -415,6 +434,9 @@
         (models.length > 0 ? models[0].name : "");
       selectedModel = session?.model || fallbackModel;
 
+      // Governor: mark currently loaded model
+      governor.setLoaded(selectedModel);
+
       const fallbackTemp = parseFloat(
         localStorage.getItem("lume_temperature") || "0.7",
       );
@@ -437,7 +459,7 @@
     e.stopPropagation();
     if (confirm("Delete this chat?")) {
       try {
-        await invoke("delete_session", { sessionId: id });
+        await invoke("delete_session", { session_id: id });
         if (currentSessionId === id) currentSessionId = "";
         await loadSessions();
       } catch (err) {
@@ -451,7 +473,7 @@
   async function handleTogglePin(e, id) {
     e.stopPropagation();
     try {
-      await invoke("toggle_pin", { sessionId: id });
+      await invoke("toggle_pin", { session_id: id });
       await loadSessions();
     } catch (err) {
       console.error("[togglePin]", err);
@@ -462,7 +484,7 @@
   async function handleExportMarkdown(sessionId) {
     try {
       const md = /** @type {string} */ (
-        await invoke("export_chat_markdown", { sessionId })
+        await invoke("export_chat_markdown", { session_id: sessionId })
       );
       const session = sessions.find((s) => s.id === sessionId);
       const filename =
@@ -555,7 +577,7 @@
       return;
     try {
       await invoke("delete_sessions", {
-        sessionIds: Array.from(selectedSessionIds),
+        session_ids: Array.from(selectedSessionIds),
       });
       if (selectedSessionIds.has(currentSessionId)) currentSessionId = "";
       selectedSessionIds = new Set();
@@ -591,13 +613,106 @@
     return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
   }
 
+  // ── Keyboard Shortcut Actions ───────────────────────────────────────────
+
+  /** @param {number} factor */
+  async function applyZoom(factor) {
+    if (factor < 0.5) factor = 0.5;
+    if (factor > 3.0) factor = 3.0;
+    zoomFactor = factor;
+    try {
+      await getCurrentWebviewWindow().setZoom(zoomFactor);
+    } catch(e) { console.error("Zoom API not available", e); }
+  }
+
+  function chatRegenerate() {
+    if (messages.length > 0 && !isLoading) {
+      let lastUserIdx = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") { lastUserIdx = i; break; }
+      }
+      if (lastUserIdx !== -1 && lastUserIdx + 1 < messages.length) {
+        handleRegenerate(messages[lastUserIdx + 1], lastUserIdx + 1);
+      }
+    }
+  }
+
+  function chatStop() {
+    if (isLoading && currentAbortController) currentAbortController.abort();
+  }
+
+  function chatCopyLast() {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "ai" && messages[i].content) {
+        handleCopy(messages[i].content, i);
+        break;
+      }
+    }
+  }
+
+  async function chatClear() {
+    if (messages.length > 0 && confirm("Clear all messages in this chat?")) {
+      messages = [];
+      try {
+        await invoke("delete_session", { session_id: currentSessionId });
+        currentSessionId = "";
+        await loadSessions();
+      } catch (err) {
+        console.error("Failed to delete session", err);
+      }
+    }
+  }
+
+  /**
+   * @param {string} before 
+   * @param {string} after 
+   */
+  function insertWrapText(before, after) {
+    if (!textareaRef) return;
+    const start = textareaRef.selectionStart;
+    const end = textareaRef.selectionEnd;
+    const selection = prompt.substring(start, end);
+    prompt = prompt.substring(0, start) + before + selection + after + prompt.substring(end);
+    setTimeout(() => {
+      textareaRef.focus();
+      textareaRef.setSelectionRange(start + before.length, end + before.length);
+    }, 0);
+  }
+
+  function editorBold() { insertWrapText("**", "**"); }
+  function editorItalic() { insertWrapText("*", "*"); }
+  function editorCodeBlock() { insertWrapText("```\n", "\n```"); }
+  function editorUndo() { document.execCommand("undo"); }
+  function editorRedo() { document.execCommand("redo"); }
+
+  $effect(() => {
+    if (currentSessionId) untrack(() => shortcutStore.pushScope("chat"));
+    else untrack(() => shortcutStore.popScope("chat"));
+  });
+
   onMount(() => {
-    // Load user name from app_settings; fall back to 'User'
-    invoke("get_setting", { key: "user_name" })
-      .then((n) => {
-        if (n) userName = /** @type {string} */ (n);
-      })
-      .catch((e) => console.error("[onMount] get_setting failed:", e));
+    // If name not in localStorage, check legacy app_settings fallback
+    if (!localStorage.getItem("lume_user_name")) {
+      invoke("get_setting", { key: "user_name" })
+        .then((n) => {
+          if (n) {
+            userName = /** @type {string} */ (n);
+            localStorage.setItem("lume_user_name", userName);
+          }
+        })
+        .catch((e) => console.error("[onMount] get_setting failed:", e));
+    }
+
+    // Storage listener for live user profile updates
+    const handleStorage = (e) => {
+      if (!e.key || e.key === "lume_user_name") {
+        userName = localStorage.getItem("lume_user_name") || "User";
+      }
+      if (!e.key || e.key === "lume_user_avatar_color") {
+        userAvatarColor = localStorage.getItem("lume_user_avatar_color") || "#10b981";
+      }
+    };
+    window.addEventListener("storage", handleStorage);
 
     fetchModels().then((m) => {
       models = m;
@@ -623,8 +738,91 @@
     const savedThinking = localStorage.getItem("lume_show_thinking");
     if (savedThinking !== null) isThinkingEnabled = savedThinking === "true";
 
-    // Load chat sessions from database — CRITICAL for sidebar and chat to work
+    // Load chat sessions from database
     loadSessions();
+
+    // ── Codex "Edit" shortcut deep-link ──────────────────────────────────
+    /** @param {Event} e */
+    function handleOpenKeybinding(e) {
+      const id = /** @type {CustomEvent} */(e).detail?.id ?? null;
+      activeShortcutId = id;
+      isSettingsOpen = true;
+    }
+    window.addEventListener("lume:open_keybinding", handleOpenKeybinding);
+
+    // ── Keyboard Shortcuts Wiring ──────────────────────────────────────────
+    const actions = {
+      "global:new_chat": () => createNewChat(),
+      "global:toggle_sidebar": () => { isSidebarCollapsed = !isSidebarCollapsed; },
+      "global:toggle_settings": () => { isSettingsOpen = true; },
+      "global:open_codex":    () => { isCodexOpen = true; },
+      "global:open_settings": () => { isSettingsOpen = true; },
+      "global:open_profile":  () => { isUserMenuOpen = !isUserMenuOpen; },
+      "global:search": () => { searchInputRef?.focus(); },
+      "global:zoom_in": () => applyZoom(zoomFactor + 0.1),
+      "global:zoom_out": () => applyZoom(zoomFactor - 0.1),
+      "global:zoom_reset": () => applyZoom(1.0),
+      "chat:regenerate": chatRegenerate,
+      "chat:stop_generation": chatStop,
+      "chat:copy_last_response": chatCopyLast,
+      "chat:clear_chat": chatClear,
+      "chat:focus_input": () => textareaRef?.focus(),
+      "chat:scroll_to_bottom": scrollToBottom,
+      "settings:close": () => { isSettingsOpen = false; },
+      "editor:bold": editorBold,
+      "editor:italic": editorItalic,
+      "editor:code_block": editorCodeBlock,
+      "editor:undo": editorUndo,
+      "editor:redo": editorRedo,
+    };
+
+    const customEvents = {
+      "lume:new_chat": actions["global:new_chat"],
+      "lume:toggle_sidebar": actions["global:toggle_sidebar"],
+      "lume:toggle_settings": actions["global:toggle_settings"],
+      "lume:focus_search": actions["global:search"],
+      "lume:show_shortcuts": () => { isCodexOpen = true; },
+      "lume:open_codex":    () => { isCodexOpen = true; },
+      "lume:open_settings": () => { isSettingsOpen = true; },
+      "lume:open_profile":  () => { isUserMenuOpen = !isUserMenuOpen; },
+      "lume:zoom_in": actions["global:zoom_in"],
+      "lume:zoom_out": actions["global:zoom_out"],
+      "lume:zoom_reset": actions["global:zoom_reset"],
+      "lume:chat:regenerate": actions["chat:regenerate"],
+      "lume:chat:stop_generation": actions["chat:stop_generation"],
+      "lume:chat:copy_last": actions["chat:copy_last_response"],
+      "lume:chat:clear": actions["chat:clear_chat"],
+      "lume:chat:focus_input": actions["chat:focus_input"],
+      "lume:chat:scroll_bottom": actions["chat:scroll_to_bottom"],
+      "lume:editor:undo": actions["editor:undo"],
+      "lume:editor:redo": actions["editor:redo"],
+    };
+
+    /** @type {Array<() => void>} */
+    const cleanups = [];
+
+    for (const [id, fn] of Object.entries(actions)) {
+      // @ts-ignore
+      cleanups.push(shortcutStore.on(id, (e) => fn()));
+    }
+
+    for (const [evtName, fn] of Object.entries(customEvents)) {
+      const handler = () => fn();
+      window.addEventListener(evtName, handler);
+      cleanups.push(() => window.removeEventListener(evtName, handler));
+    }
+
+    // ── Governor init ────────────────────────────────────────────────────
+    const savedOllamaUrl =
+      localStorage.getItem("lume_ollama_url") || "http://localhost:11434";
+    governor.setOllamaUrl(savedOllamaUrl);
+    governor.init();
+
+    return () => {
+      window.removeEventListener("lume:open_keybinding", handleOpenKeybinding);
+      window.removeEventListener("storage", handleStorage);
+      cleanups.forEach((c) => c());
+    };
   });
 
   function handleScroll() {
@@ -680,7 +878,7 @@
       const userMsgIndex = messages.length - 1;
 
       invoke("save_message", {
-        sessionId: currentSessionId,
+        session_id: currentSessionId,
         role: "user",
         content: currentPrompt,
       })
@@ -741,7 +939,7 @@
           ? `<think>\n${finalThinkText}\n</think>\n\n${finalText}`
           : finalText;
         const id = await invoke("save_message", {
-          sessionId: currentSessionId,
+          session_id: currentSessionId,
           role: "ai",
           content: rawTextForDB,
         });
@@ -763,7 +961,7 @@
               ? `<think>\n${partialThink}\n</think>\n\n${partialText}`
               : partialText;
             const id = await invoke("save_message", {
-              sessionId: currentSessionId,
+              session_id: currentSessionId,
               role: "ai",
               content: rawTextForDB,
             });
@@ -817,7 +1015,7 @@
 
     try {
       await invoke("delete_messages_after", {
-        sessionId: currentSessionId,
+        session_id: currentSessionId,
         timestamp,
       });
       const idx = messages.findIndex((m) => m.id === msgId);
@@ -843,7 +1041,7 @@
     prompt = promptMsg.content;
 
     try {
-      await invoke("delete_message", { messageId: msg.id });
+      await invoke("delete_message", { message_id: msg.id });
       messages = messages.filter((m) => m.id !== msg.id);
       await handleSend(true);
     } catch (e) {
@@ -859,7 +1057,7 @@
 
   async function handleClear() {
     if (confirm("Delete all history for this session?")) {
-      await invoke("clear_messages", { sessionId: currentSessionId });
+      await invoke("clear_messages", { session_id: currentSessionId });
       messages = [];
     }
   }
@@ -998,6 +1196,7 @@
             ></line></svg
           >
           <input
+            bind:this={searchInputRef}
             bind:value={searchQuery}
             placeholder="Search chats..."
             class="flex-1 bg-white dark:bg-[#0d1117] border border-gray-200 dark:border-gray-800 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all shadow-sm text-gray-800 dark:text-gray-200 placeholder-gray-400"
@@ -1287,7 +1486,8 @@
           title={userName}
         >
           <div
-            class="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs font-bold select-none"
+            class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold select-none"
+            style="background-color: {userAvatarColor}"
           >
             {userInitials}
           </div>
@@ -1323,7 +1523,7 @@
             </p>
           </div>
 
-          <!-- TOP SECTION: Settings · Language · Get Help -->
+          <!-- TOP SECTION: Settings -->
           <div class="px-1.5 pb-1">
             <!-- Settings -->
             <button
@@ -1351,67 +1551,6 @@
               </svg>
               Settings
             </button>
-            <!-- Language -->
-            <button
-              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left"
-            >
-              <!-- Lucide Globe -->
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-[15px] h-[15px] text-gray-400 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path
-                  d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-                />
-              </svg>
-              Language
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-3 h-3 text-gray-400 ml-auto"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                ><polyline points="9 18 15 12 9 6" /></svg
-              >
-            </button>
-            <!-- Get Help -->
-            <button
-              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left"
-            >
-              <!-- Lucide LifeBuoy -->
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-[15px] h-[15px] text-gray-400 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" /><circle
-                  cx="12"
-                  cy="12"
-                  r="4"
-                />
-                <line x1="4.93" y1="4.93" x2="9.17" y2="9.17" />
-                <line x1="14.83" y1="14.83" x2="19.07" y2="19.07" />
-                <line x1="14.83" y1="9.17" x2="19.07" y2="4.93" />
-                <line x1="14.83" y1="9.17" x2="18.36" y2="5.64" />
-                <line x1="4.93" y1="19.07" x2="9.17" y2="14.83" />
-              </svg>
-              Get help
-            </button>
           </div>
 
           <!-- DIVIDER -->
@@ -1419,29 +1558,8 @@
             class="mx-3 my-1 border-t border-gray-200/70 dark:border-white/10"
           ></div>
 
-          <!-- BOTTOM SECTION: Get Models · Learn More -->
+          <!-- BOTTOM SECTION: Learn More -->
           <div class="px-1.5 pt-1 pb-1.5">
-            <!-- Get Models -->
-            <button
-              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left"
-            >
-              <!-- Lucide Download -->
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-[15px] h-[15px] text-gray-400 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Get models
-            </button>
             <!-- Learn More (Codex) -->
             <button
               onclick={() => {
@@ -1488,7 +1606,8 @@
           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
         >
           <div
-            class="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs font-bold shrink-0 select-none"
+            class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 select-none"
+            style="background-color: {userAvatarColor}"
           >
             {userInitials}
           </div>
@@ -1584,31 +1703,67 @@
           {/if}
         </button>
 
-        <button
-          onclick={handleClear}
-          class="p-1.5 rounded-md text-red-500 hover:text-red-600 bg-transparent hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-          title="Clear Current Chat"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            ><polyline points="3 6 5 6 21 6"></polyline><path
-              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-            ></path><line x1="10" y1="11" x2="10" y2="17"></line><line
-              x1="14"
-              y1="11"
-              x2="14"
-              y2="17"
-            ></line></svg
+        <div class="relative">
+          <button
+            onclick={() => (isHeaderMenuOpen = !isHeaderMenuOpen)}
+            class="p-1.5 rounded-md text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 bg-transparent hover:bg-gray-100 dark:hover:bg-[#1a212c] transition-colors"
+            title="Chat Options"
           >
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="1"></circle>
+              <circle cx="19" cy="12" r="1"></circle>
+              <circle cx="5" cy="12" r="1"></circle>
+            </svg>
+          </button>
+
+          {#if isHeaderMenuOpen}
+            <div
+              class="fixed inset-0 z-40"
+              role="presentation"
+              onclick={() => (isHeaderMenuOpen = false)}
+            ></div>
+            <div
+              class="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#141920] border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg z-50 py-1 overflow-hidden"
+            >
+              <button
+                onclick={() => {
+                  handleClear();
+                  isHeaderMenuOpen = false;
+                }}
+                class="w-full flex items-center px-4 py-2.5 text-sm text-red-500 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="mr-2"
+                >
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path
+                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                  ></path>
+                </svg>
+                Delete Current Chat
+              </button>
+            </div>
+          {/if}
+        </div>
       </div>
     </header>
 
@@ -1903,6 +2058,8 @@
       <div class="max-w-3xl mx-auto flex items-end space-x-3 relative">
         <textarea
           bind:this={textareaRef}
+          onfocus={() => shortcutStore.pushScope("editor")}
+          onblur={() => shortcutStore.popScope("editor")}
           bind:value={prompt}
           placeholder="Message Lume..."
           oninput={adjustTextareaHeight}
@@ -2038,8 +2195,8 @@
                         if (currentSessionId) {
                           try {
                             await invoke("set_session_system_prompt", {
-                              sessionId: currentSessionId,
-                              systemPrompt: "",
+                              session_id: currentSessionId,
+                              system_prompt: "",
                             });
                           } catch (e) {
                             console.error("[systemPrompt] clear failed:", e);
@@ -2080,8 +2237,8 @@
                     if (!currentSessionId) return;
                     try {
                       await invoke("set_session_system_prompt", {
-                        sessionId: currentSessionId,
-                        systemPrompt: systemPrompt,
+                        session_id: currentSessionId,
+                        system_prompt: systemPrompt,
                       });
                       const idx = sessions.findIndex(
                         (s) => s.id === currentSessionId,
@@ -2179,7 +2336,7 @@
 
                     try {
                       await invoke("set_session_temperature", {
-                        sessionId: currentSessionId,
+                        session_id: currentSessionId,
                         temperature: val,
                       });
                       const idx = sessions.findIndex(
@@ -2311,11 +2468,11 @@
                             return;
                           }
                           const previousModel = selectedModel;
-                          selectedModel = model.name;
+                          await handleModelChange(model.name);
                           isModelMenuOpen = false;
                           try {
                             await invoke("set_session_model", {
-                              sessionId: currentSessionId,
+                              session_id: currentSessionId,
                               model: model.name,
                             });
                             const idx = sessions.findIndex(
@@ -2336,7 +2493,8 @@
                               "Failed to save model choice. Please try again.";
                             setTimeout(() => (errorMessage = ""), 4000);
                           }
-                        }}
+                          }}
+
                         class="w-full flex items-center justify-between text-left px-3 py-2.5 rounded-xl transition-all cursor-pointer hover:bg-gray-100/80 dark:hover:bg-[#21262d] {selectedModel ===
                         model.name
                           ? 'bg-emerald-50 dark:bg-emerald-900/10'
@@ -2669,7 +2827,7 @@
   onClose={() => (isSettingsOpen = false)}
   {models}
   {selectedModel}
-  onModelChange={(model) => (selectedModel = model)}
+  onModelChange={(model) => handleModelChange(model)}
   {isDarkMode}
   onThemeChange={(dark) => {
     isDarkMode = dark;
@@ -2686,5 +2844,19 @@
   }}
   onDataWiped={() => {
     loadSessions();
+  }}
+/>
+
+<!-- Governor Notice -->
+<GovernorNotice
+  onConfirm={async () => {
+    const d = governor.pendingDecision;
+    await governor.confirmSwitch();
+    if (d && d.type !== "allow") selectedModel = d.nextModel;
+  }}
+  onDismiss={() => {
+    const d = governor.pendingDecision;
+    if (d && d.type !== "allow") selectedModel = d.nextModel;
+    governor.dismissDecision();
   }}
 />

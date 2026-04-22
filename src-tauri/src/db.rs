@@ -28,9 +28,9 @@ pub struct ChatMessage {
     pub created_at: i64,
 }
 
-pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
-    let app_dir = app_handle.path().app_data_dir().expect("Failed to resolve app data dir");
-    std::fs::create_dir_all(&app_dir).expect("Failed to create app data dir");
+pub fn init(app_handle: &tauri::AppHandle) -> std::result::Result<Connection, Box<dyn std::error::Error>> {
+    let app_dir = app_handle.path().app_data_dir()?;
+    std::fs::create_dir_all(&app_dir)?;
     let db_path = app_dir.join("chats.db");
 
     let conn = Connection::open(db_path)?;
@@ -85,7 +85,7 @@ pub fn init(app_handle: &tauri::AppHandle) -> Result<Connection> {
     Ok(conn)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_session(state: tauri::State<DbState>, title: String, model: String, temperature: f64, system_prompt: String) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
@@ -99,7 +99,7 @@ pub fn create_session(state: tauri::State<DbState>, title: String, model: String
     Ok(id)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_sessions(state: tauri::State<DbState>) -> Result<Vec<ChatSession>, String> {
     let conn = state.conn.lock().unwrap();
     let mut stmt = conn.prepare(
@@ -127,7 +127,7 @@ pub fn get_sessions(state: tauri::State<DbState>) -> Result<Vec<ChatSession>, St
     Ok(sessions)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_session_model(state: tauri::State<DbState>, session_id: String, model: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute(
@@ -137,7 +137,7 @@ pub fn set_session_model(state: tauri::State<DbState>, session_id: String, model
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_session_temperature(state: tauri::State<DbState>, session_id: String, temperature: f64) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute(
@@ -147,7 +147,7 @@ pub fn set_session_temperature(state: tauri::State<DbState>, session_id: String,
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_session_system_prompt(state: tauri::State<DbState>, session_id: String, system_prompt: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute(
@@ -157,7 +157,7 @@ pub fn set_session_system_prompt(state: tauri::State<DbState>, session_id: Strin
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn toggle_pin(state: tauri::State<DbState>, session_id: String) -> Result<bool, String> {
     let conn = state.conn.lock().unwrap();
     let current: i64 = conn.query_row(
@@ -173,14 +173,14 @@ pub fn toggle_pin(state: tauri::State<DbState>, session_id: String) -> Result<bo
     Ok(new_val != 0)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn delete_session(state: tauri::State<DbState>, session_id: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM sessions WHERE id = ?1", [&session_id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn save_message(state: tauri::State<DbState>, session_id: String, role: String, content: String) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
@@ -209,7 +209,7 @@ pub fn save_message(state: tauri::State<DbState>, session_id: String, role: Stri
     Ok(id)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_messages(state: tauri::State<DbState>, session_id: String) -> Result<Vec<ChatMessage>, String> {
     let conn = state.conn.lock().unwrap();
     let mut stmt = conn.prepare("SELECT id, role, content, created_at FROM messages WHERE session_id = ?1 ORDER BY created_at ASC").map_err(|e| e.to_string())?;
@@ -231,28 +231,28 @@ pub fn get_messages(state: tauri::State<DbState>, session_id: String) -> Result<
     Ok(messages)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn clear_messages(state: tauri::State<DbState>, session_id: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM messages WHERE session_id = ?1", [&session_id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn delete_message(state: tauri::State<DbState>, message_id: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM messages WHERE id = ?1", [&message_id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn delete_messages_after(state: tauri::State<DbState>, session_id: String, timestamp: i64) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM messages WHERE session_id = ?1 AND created_at >= ?2", (&session_id, &timestamp)).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn export_chat_markdown(state: tauri::State<DbState>, session_id: String) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     
@@ -291,13 +291,15 @@ pub struct ImportMessage {
     pub content: String,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn import_chat(state: tauri::State<DbState>, title: String, messages: Vec<ImportMessage>) -> Result<String, String> {
-    let conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    
     let session_id = uuid::Uuid::new_v4().to_string();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
     
-    conn.execute(
+    tx.execute(
         "INSERT INTO sessions (id, title, created_at, updated_at, is_pinned) VALUES (?1, ?2, ?3, ?4, 0)",
         (&session_id, &title, &now, &now),
     ).map_err(|e| e.to_string())?;
@@ -305,16 +307,17 @@ pub fn import_chat(state: tauri::State<DbState>, title: String, messages: Vec<Im
     for (i, msg) in messages.iter().enumerate() {
         let msg_id = uuid::Uuid::new_v4().to_string();
         let ts = now + i as i64;
-        conn.execute(
+        tx.execute(
             "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             (&msg_id, &session_id, &msg.role, &msg.content, &ts),
         ).map_err(|e| e.to_string())?;
     }
     
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(session_id)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn delete_sessions(state: tauri::State<DbState>, session_ids: Vec<String>) -> Result<(), String> {
     let mut conn = state.conn.lock().unwrap();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -332,7 +335,7 @@ pub struct StorageStats {
     pub db_size_bytes: u64,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_storage_stats(state: tauri::State<DbState>, app_handle: tauri::AppHandle) -> Result<StorageStats, String> {
     let conn = state.conn.lock().unwrap();
     let session_count: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0)).map_err(|e| e.to_string())?;
@@ -349,7 +352,7 @@ pub fn get_storage_stats(state: tauri::State<DbState>, app_handle: tauri::AppHan
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn wipe_all_data(state: tauri::State<DbState>) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute("DELETE FROM messages", []).map_err(|e| e.to_string())?;
@@ -362,7 +365,7 @@ pub fn wipe_all_data(state: tauri::State<DbState>) -> Result<(), String> {
 
 /// Retrieve a single setting by key.
 /// Returns `None` if the key has never been set.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_setting(state: tauri::State<DbState>, key: String) -> Result<Option<String>, String> {
     let conn = state.conn.lock().unwrap();
     let result = conn.query_row(
@@ -378,7 +381,7 @@ pub fn get_setting(state: tauri::State<DbState>, key: String) -> Result<Option<S
 }
 
 /// Persist a setting.  Creates the row if absent, updates it if present.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_setting(state: tauri::State<DbState>, key: String, value: String) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     conn.execute(

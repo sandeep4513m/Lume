@@ -1,48 +1,96 @@
-<script>
-  import { onMount } from 'svelte';
+<script lang="ts">
   import { fade, fly, slide } from 'svelte/transition';
+  import { shortcutStore } from '$lib/stores/shortcuts.svelte';
+  import KeyBadge from '$lib/components/KeyBadge.svelte';
+  import type { ShortcutDef, ShortcutId, ShortcutScope } from '$lib/types/shortcuts';
 
-  /** @type {{ isOpen: boolean, onClose: () => void }} */
-  let { isOpen = false, onClose } = $props();
+  let { isOpen = false, onClose }: { isOpen: boolean; onClose: () => void } = $props();
 
-  // State for shortcut highlighting
-  let lastPressedKey = $state('');
+  // ── Keyboard press highlight ─────────────────────────────────────────────
+  let lastPressedCombo = $state('');
 
-  // Expandable state for "How Lume Thinks"
+  // ── Scope accordion expansion state ─────────────────────────────────────
+  let expandedScopes = $state<Set<ShortcutScope>>(new Set(['global', 'chat']));
+
+  // ── "Under the Hood" accordion ───────────────────────────────────────────
   let isThinkExpanded = $state(false);
 
-  // Keyboard shortcut listener to highlight keys visually if they are pressed
+  // ── Scope display config ─────────────────────────────────────────────────
+  const SCOPE_META: Record<ShortcutScope, { label: string; icon: string; description: string }> = {
+    global: {
+      label: 'Global',
+      description: 'Active everywhere in the application',
+      icon: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9',
+    },
+    chat: {
+      label: 'Chat',
+      description: 'Active during a conversation',
+      icon: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z',
+    },
+    editor: {
+      label: 'Editor',
+      description: 'Active while editing code or prompts',
+      icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4',
+    },
+    settings: {
+      label: 'Settings',
+      description: 'Active in the settings panel',
+      icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+    },
+  };
+
+  const SCOPE_ORDER: ShortcutScope[] = ['global', 'chat', 'editor', 'settings'];
+
+  // ── Reactive store data ───────────────────────────────────────────────────
+  // byScope is a $derived inside the store — accessing it here tracks reactivity
+  const scopeGroups = $derived(shortcutStore.byScope);
+
+  // ── Keyboard highlight listener ───────────────────────────────────────────
   $effect(() => {
     if (!isOpen) return;
 
-    /** @param {KeyboardEvent} e */
-    function handleKeyDown(e) {
+    let clearTimer: ReturnType<typeof setTimeout>;
+
+    function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         onClose();
-        lastPressedKey = 'Escape';
+        lastPressedCombo = 'Escape';
+      } else {
+        lastPressedCombo = shortcutStore.normalizeEvent(e);
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        lastPressedKey = 'Ctrl+K';
-        e.preventDefault(); // Prevent default browser search if needed
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        lastPressedKey = 'Ctrl+Enter';
-      }
-      
-      // Clear highlight after a short delay
-      setTimeout(() => {
-        if (lastPressedKey === 'Escape' || lastPressedKey === 'Ctrl+K' || lastPressedKey === 'Ctrl+Enter') {
-          lastPressedKey = '';
-        }
-      }, 300);
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => { lastPressedCombo = ''; }, 600);
     }
 
     window.addEventListener('keydown', handleKeyDown);
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(clearTimer);
     };
   });
+
+  // ── Edit button → open Settings → Shortcuts → highlight row ──────────────
+  function openShortcutEdit(id: ShortcutId) {
+    onClose();
+    // Small delay so Codex closes before Settings opens (avoids z-index flash)
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent('lume:open_keybinding', { detail: { id } }),
+      );
+    }, 160);
+  }
+
+  function toggleScope(scope: ShortcutScope) {
+    const next = new Set(expandedScopes);
+    if (next.has(scope)) next.delete(scope);
+    else next.add(scope);
+    expandedScopes = next;
+  }
+
+  // Check if the last pressed combo matches a shortcut's current keys
+  function isHighlighted(def: ShortcutDef): boolean {
+    return lastPressedCombo !== '' && def.currentKeys.includes(lastPressedCombo);
+  }
 </script>
 
 {#if isOpen}
@@ -71,17 +119,18 @@
           Lume Codex
         </h2>
       </div>
-      <button 
+      <button
         class="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
         onclick={onClose}
+        aria-label="Close Codex"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
       </button>
     </header>
 
     <div class="flex-1 p-6 space-y-10 overflow-y-auto">
-      
-      <!-- 1. The Local AI Primer -->
+
+      <!-- ── 1. Privacy First ─────────────────────────────────────────────── -->
       <section class="group">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 mb-4 flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="9" x2="9" y1="21" y2="9"/></svg>
@@ -100,33 +149,31 @@
         </div>
       </section>
 
-      <!-- 2. "How Lume Thinks" -->
+      <!-- ── 2. Under the Hood ───────────────────────────────────────────── -->
       <section>
         <h3 class="text-xs font-semibold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 mb-4 flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
           Under the Hood
         </h3>
-        
-        <!-- Interactive Accordion Box -->
+
         <div class="bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-700/50 overflow-hidden">
-          <button 
+          <button
             class="w-full px-5 py-4 flex items-center justify-between bg-white dark:bg-gray-800/80 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
             onclick={() => isThinkExpanded = !isThinkExpanded}
           >
-            <span class="font-semibold text-gray-900 dark:text-gray-100 text-sm">Reasoning Models & &lt;think&gt; tags</span>
-            <svg 
+            <span class="font-semibold text-gray-900 dark:text-gray-100 text-sm">Reasoning Models &amp; &lt;think&gt; tags</span>
+            <svg
               xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
               class="text-gray-500 transition-transform duration-300 {isThinkExpanded ? 'rotate-180' : ''}"
             ><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          
+
           {#if isThinkExpanded}
             <div transition:slide={{ duration: 300 }} class="px-5 pb-5 pt-2">
               <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
                 Advanced models like DeepSeek-R1 output their reasoning process inside special <code>&lt;think&gt;</code> blocks before answering.
               </p>
-              
-              <!-- Mock Chat Bubble Animation -->
+
               <div class="space-y-3 relative before:absolute before:inset-0 before:bg-gradient-to-t before:from-gray-50 dark:before:from-gray-800/50 before:to-transparent before:z-10 before:h-full">
                 <div class="flex gap-2">
                   <div class="w-1 bg-emerald-500 rounded-full"></div>
@@ -149,46 +196,116 @@
         </div>
       </section>
 
-      <!-- 3. Mastery (Shortcuts) -->
+      <!-- ── 3. Keyboard Mastery (live from store, grouped by scope) ────── -->
       <section>
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 mb-4 flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          Keyboard Mastery
-        </h3>
-        
-        <div class="space-y-2">
-          <!-- Shortcut Item 1 -->
-          <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-800/30 border border-transparent transition-colors {lastPressedKey === 'Ctrl+K' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'hover:bg-gray-100 dark:hover:bg-gray-800/60'}">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Focus Chat Input</span>
-            <div class="flex gap-1">
-              <kbd class="px-2 py-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 shadow-sm {lastPressedKey === 'Ctrl+K' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/50' : ''}">Ctrl/Cmd</kbd>
-              <kbd class="px-2 py-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 shadow-sm {lastPressedKey === 'Ctrl+K' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/50' : ''}">K</kbd>
-            </div>
-          </div>
-
-          <!-- Shortcut Item 2 -->
-          <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-800/30 border border-transparent transition-colors {lastPressedKey === 'Ctrl+Enter' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'hover:bg-gray-100 dark:hover:bg-gray-800/60'}">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Send Message</span>
-            <div class="flex gap-1">
-              <kbd class="px-2 py-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 shadow-sm {lastPressedKey === 'Ctrl+Enter' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/50' : ''}">Ctrl</kbd>
-              <kbd class="px-2 py-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 shadow-sm {lastPressedKey === 'Ctrl+Enter' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/50' : ''}">Enter</kbd>
-            </div>
-          </div>
-          
-          <!-- Shortcut Item 3 -->
-          <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-800/30 border border-transparent transition-colors {lastPressedKey === 'Escape' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'hover:bg-gray-100 dark:hover:bg-gray-800/60'}">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Stop Generation / Close</span>
-            <div class="flex gap-1">
-              <kbd class="px-2 py-1 rounded bg-white dark:bg-black border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 shadow-sm {lastPressedKey === 'Escape' ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/50' : ''}">Esc</kbd>
-            </div>
-          </div>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01M10 18h4"/></svg>
+            Keyboard Mastery
+          </h3>
+          <button
+            class="text-[11px] text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-medium transition-colors"
+            onclick={() => window.dispatchEvent(new CustomEvent('lume:open_keybinding', { detail: { id: null } }))}
+          >
+            Edit all →
+          </button>
         </div>
+
+        <!-- Press-to-highlight tip -->
+        {#if lastPressedCombo}
+          <div class="mb-3 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200/60 dark:border-emerald-800/40 text-[12px] text-emerald-700 dark:text-emerald-300 font-medium flex items-center gap-2 animate-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Detected: {lastPressedCombo}
+          </div>
+        {/if}
+
+        <div class="space-y-4">
+          {#each SCOPE_ORDER as scope}
+            {@const defs = scopeGroups[scope] ?? []}
+            {@const meta = SCOPE_META[scope]}
+            {#if defs.length > 0}
+              <div class="rounded-2xl border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+                <!-- Scope header (accordion toggle) -->
+                <button
+                  class="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800/80 hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors text-left"
+                  onclick={() => toggleScope(scope)}
+                >
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-6 h-6 rounded-md bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-500 dark:text-emerald-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d={meta.icon}/></svg>
+                    </div>
+                    <div>
+                      <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-200">{meta.label}</span>
+                      <span class="ml-2 text-[11px] text-gray-400 dark:text-gray-500">{defs.length} shortcut{defs.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  </div>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                    class="text-gray-400 transition-transform duration-200 {expandedScopes.has(scope) ? 'rotate-180' : ''}"
+                  ><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+
+                <!-- Shortcut rows -->
+                {#if expandedScopes.has(scope)}
+                  <div transition:slide={{ duration: 200 }} class="divide-y divide-gray-100 dark:divide-gray-700/30 bg-gray-50/50 dark:bg-gray-800/30">
+                    {#each defs as def (def.id)}
+                      {@const highlighted = isHighlighted(def)}
+                      {@const isModified = JSON.stringify(def.currentKeys) !== JSON.stringify(def.defaultKeys)}
+                      <div
+                        class="group flex items-center justify-between px-4 py-3 transition-colors"
+                        class:bg-emerald-50={highlighted}
+                        class:dark:bg-emerald-900={highlighted}
+                        style={highlighted ? 'box-shadow: 0 0 12px rgba(16,185,129,0.15) inset;' : ''}
+                      >
+                        <div class="flex-1 min-w-0 pr-4">
+                          <p class="text-[13px] font-medium text-gray-800 dark:text-gray-200 truncate">{def.description}</p>
+                          {#if isModified}
+                            <p class="text-[11px] text-amber-500 dark:text-amber-400 mt-0.5 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                              Customised
+                            </p>
+                          {/if}
+                        </div>
+
+                        <div class="flex items-center gap-2 shrink-0">
+                          <!-- Key badge(s) — live from store -->
+                          {#each def.currentKeys as combo (combo)}
+                            <KeyBadge {combo} active={highlighted} />
+                          {/each}
+                          {#if def.currentKeys.length === 0}
+                            <KeyBadge combo="" dim />
+                          {/if}
+
+                          <!-- Edit button — hidden by default, revealed on hover -->
+                          <button
+                            class="ml-1 px-2 py-1 rounded-md text-[11px] font-medium opacity-0 group-hover:opacity-100 transition-opacity
+                              text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 border border-transparent hover:border-emerald-200 dark:hover:border-emerald-800"
+                            onclick={() => openShortcutEdit(def.id)}
+                            title="Edit in Settings → Shortcuts"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          {/each}
+        </div>
+
+        <!-- Tip bar -->
+        <p class="mt-4 text-[11px] text-gray-400 dark:text-gray-600 text-center flex items-center justify-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Press any shortcut while this panel is open to highlight it
+        </p>
       </section>
-      
+
       <!-- Footer -->
       <footer class="pt-6 border-t border-gray-200/50 dark:border-gray-800/50 flex flex-col items-center gap-2">
-        <p class="text-xs text-gray-400 dark:text-gray-500">Lume is built with ❤️ using Tauri & Svelte 5</p>
-        <button 
+        <p class="text-xs text-gray-400 dark:text-gray-500">Lume is built with ❤️ using Tauri &amp; Svelte 5</p>
+        <button
           class="text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-500 dark:hover:text-emerald-400 font-medium transition-colors"
           onclick={onClose}
         >

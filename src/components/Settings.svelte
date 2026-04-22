@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import KeybindingsTab from '$lib/components/KeybindingsTab.svelte';
+  import GeneralSettings from '$lib/components/settings/GeneralSettings.svelte';
 
   /** 
    * @type {{ 
@@ -15,7 +17,8 @@
    *   onStreamingChange: (enabled: boolean) => void,
    *   showThinkingBlocks?: boolean,
    *   onThinkingChange?: (enabled: boolean) => void,
-   *   onDataWiped: () => void
+   *   onDataWiped: () => void,
+   *   highlightShortcutId?: string | null
    * }} 
    */
   let { 
@@ -30,16 +33,26 @@
     onStreamingChange = () => {},
     showThinkingBlocks = true,
     onThinkingChange = () => {},
-    onDataWiped = () => {}
+    onDataWiped = () => {},
+    highlightShortcutId = null
   } = $props();
 
+  // Auto-switch to Shortcuts tab when a highlightShortcutId arrives
+  $effect(() => {
+    if (highlightShortcutId) {
+      activeTab = 'shortcuts';
+    }
+  });
+
   // Tab state
-  let activeTab = $state('models');
+  let activeTab = $state('general');
   
   const tabs = [
+    { id: 'general', label: 'General', icon: 'user' },
     { id: 'models', label: 'Models', icon: 'robot' },
     { id: 'chat', label: 'Chat', icon: 'chat' },
     { id: 'appearance', label: 'Appearance', icon: 'palette' },
+    { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard' },
     { id: 'data', label: 'Data', icon: 'database' },
     { id: 'about', label: 'About', icon: 'info' }
   ];
@@ -67,10 +80,12 @@
   let isImporting = $state(false);
   let showWipeConfirm = $state(false);
   let wipeConfirmText = $state('');
+  let showDangerZone = $state(false);
 
   // ── About Tab State ──
   let ollamaVersion = $state('');
   let ollamaConnected = $state(false);
+  let copied = $state(false);
 
   // Load settings from localStorage on mount
   onMount(() => {
@@ -113,17 +128,21 @@
       const response = await fetch(ollamaUrl + '/api/tags');
       if (response.ok) {
         connectionStatus = 'connected';
+        fetchOllamaVersion(); // Refresh status
         setTimeout(() => connectionStatus = '', 3000);
       } else {
         connectionStatus = 'failed';
+        ollamaConnected = false;
       }
     } catch {
       connectionStatus = 'failed';
+      ollamaConnected = false;
     }
   }
 
   function handleOllamaUrlChange() {
     persist('lume_ollama_url', ollamaUrl);
+    fetchOllamaVersion(); // Refresh status when URL changes
   }
 
   /** @param {number} val */
@@ -133,10 +152,20 @@
   }
 
   /** @param {string} model */
-  function handleDefaultModelChange(model) {
+  async function handleDefaultModelChange(model) {
     defaultModel = model;
     persist('lume_default_model', model);
     onModelChange(model);
+    
+    // Immediate fetch to avoid the round-trip delay of 'selectedModel' prop flowing back from parent
+    try {
+      const response = await fetch(`${ollamaUrl}/api/ps`);
+      if (response.ok) {
+        ollamaConnected = true;
+      }
+    } catch {
+      // Errors will be handled by the next polling cycle
+    }
   }
 
   // ── Chat Actions ──
@@ -227,7 +256,7 @@
       const sessions = /** @type {any[]} */ (await invoke('get_sessions'));
       const allData = [];
       for (const session of sessions) {
-        const messages = await invoke('get_messages', { sessionId: session.id });
+        const messages = await invoke('get_messages', { session_id: session.id });
         allData.push({
           id: session.id,
           title: session.title,
@@ -370,12 +399,16 @@
                 }"
             >
               <!-- Tab Icons -->
-              {#if tab.icon === 'robot'}
+              {#if tab.icon === 'user'}
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              {:else if tab.icon === 'robot'}
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
               {:else if tab.icon === 'chat'}
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
               {:else if tab.icon === 'palette'}
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"></circle><circle cx="19" cy="13.5" r="2.5"></circle><circle cx="6.5" cy="12" r="2.5"></circle><circle cx="10.5" cy="19" r="2.5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c1.1 0 2-.4 2-1.5 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-1.1.9-2 2-2h2.3c3 0 5.5-2.5 5.5-5.5C23 6.5 18 2 12 2z"></path></svg>
+              {:else if tab.icon === 'keyboard'}
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01M10 18h4"></path></svg>
               {:else if tab.icon === 'database'}
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
               {:else if tab.icon === 'info'}
@@ -388,7 +421,7 @@
 
         <!-- Bottom: version badge -->
         <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-800">
-          <span class="text-[11px] text-gray-400 dark:text-gray-600 font-medium">Lume v0.4.0</span>
+          <span class="text-[11px] text-gray-400 dark:text-gray-600 font-medium">Lume v0.5.0-beta.1</span>
         </div>
       </nav>
 
@@ -398,9 +431,11 @@
         <!-- Content Header + Close Button -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 shrink-0">
           <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">
-            {#if activeTab === 'models'}🤖 Models
+            {#if activeTab === 'general'}👤 General
+            {:else if activeTab === 'models'}🤖 Models
             {:else if activeTab === 'chat'}💬 Chat
             {:else if activeTab === 'appearance'}🎨 Appearance
+            {:else if activeTab === 'shortcuts'}⌨️ Shortcuts
             {:else if activeTab === 'data'}💾 Data
             {:else if activeTab === 'about'}ℹ️ About
             {/if}
@@ -418,9 +453,15 @@
         <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
           <!-- ═══════════════════════════════════════════ -->
+          <!-- GENERAL TAB -->
+          <!-- ═══════════════════════════════════════════ -->
+          {#if activeTab === 'general'}
+            <GeneralSettings />
+
+          <!-- ═══════════════════════════════════════════ -->
           <!-- MODELS TAB -->
           <!-- ═══════════════════════════════════════════ -->
-          {#if activeTab === 'models'}
+          {:else if activeTab === 'models'}
             
             <!-- Default Model -->
             <div class="space-y-2">
@@ -437,6 +478,7 @@
                   <option disabled>No models available</option>
                 {/if}
               </select>
+
               <p class="text-[12px] text-gray-400 dark:text-gray-500">Select the model used for new conversations</p>
             </div>
 
@@ -505,85 +547,98 @@
           <!-- CHAT TAB -->
           <!-- ═══════════════════════════════════════════ -->
           {:else if activeTab === 'chat'}
-            
-            <!-- Streaming Toggle -->
-            <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Streaming Responses</p>
-                <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Show AI responses as they're generated</p>
+
+            <!-- Group: Behavior -->
+            <div class="space-y-1">
+              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Behavior</h3>
+
+              <!-- Streaming Toggle -->
+              <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Streaming Responses</p>
+                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Show AI responses as they're generated</p>
+                </div>
+                <button
+                  onclick={() => handleStreamingToggle(!isStreamingEnabled)}
+                  aria-label="Toggle streaming responses"
+                  class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
+                    {isStreamingEnabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
+                >
+                  <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {isStreamingEnabled ? 'translate-x-5' : 'translate-x-0'}"></span>
+                </button>
               </div>
-              <button
-                onclick={() => handleStreamingToggle(!isStreamingEnabled)}
-                aria-label="Toggle streaming responses"
-                class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
-                  {isStreamingEnabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
-              >
-                <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {isStreamingEnabled ? 'translate-x-5' : 'translate-x-0'}"></span>
-              </button>
+
+              <!-- Enter to Send -->
+              <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Enter to Send</p>
+                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">{enterToSend ? 'Press Enter to send, Shift+Enter for new line' : 'Press Enter for new line, Ctrl+Enter to send'}</p>
+                </div>
+                <button
+                  onclick={() => handleEnterToSendToggle(!enterToSend)}
+                  aria-label="Toggle enter to send"
+                  class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
+                    {enterToSend ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
+                >
+                  <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {enterToSend ? 'translate-x-5' : 'translate-x-0'}"></span>
+                </button>
+              </div>
             </div>
 
-            <!-- Show Thinking Blocks -->
-            <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Show Thinking Blocks</p>
-                <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Display model's reasoning process</p>
-              </div>
-              <button
-                onclick={() => handleThinkingToggle(!showThinkingBlocks)}
-                aria-label="Toggle thinking blocks"
-                class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
-                  {showThinkingBlocks ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
-              >
-                <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {showThinkingBlocks ? 'translate-x-5' : 'translate-x-0'}"></span>
-              </button>
-            </div>
+            <!-- Divider -->
+            <div class="pt-2 border-b border-gray-200 dark:border-gray-800 opacity-50"></div>
 
-            <!-- Show Token Counter -->
-            <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Show Token Counter</p>
-                <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Display token usage for each response</p>
-              </div>
-              <button
-                onclick={() => handleTokenToggle(!showTokenCounter)}
-                aria-label="Toggle token counter"
-                class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
-                  {showTokenCounter ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
-              >
-                <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {showTokenCounter ? 'translate-x-5' : 'translate-x-0'}"></span>
-              </button>
-            </div>
+            <!-- Group: Display -->
+            <div class="space-y-1 pt-2">
+              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Display</h3>
 
-            <!-- Show Response Time -->
-            <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Show Response Time</p>
-                <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Display how long each response took</p>
+              <!-- Show Thinking Blocks -->
+              <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Show Thinking Blocks</p>
+                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Display model's reasoning process</p>
+                </div>
+                <button
+                  onclick={() => handleThinkingToggle(!showThinkingBlocks)}
+                  aria-label="Toggle thinking blocks"
+                  class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
+                    {showThinkingBlocks ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
+                >
+                  <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {showThinkingBlocks ? 'translate-x-5' : 'translate-x-0'}"></span>
+                </button>
               </div>
-              <button
-                onclick={() => handleResponseTimeToggle(!showResponseTime)}
-                aria-label="Toggle response time"
-                class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
-                  {showResponseTime ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
-              >
-                <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {showResponseTime ? 'translate-x-5' : 'translate-x-0'}"></span>
-              </button>
-            </div>
 
-            <!-- Enter to Send -->
-            <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-              <div>
-                <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Enter to Send</p>
-                <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">{enterToSend ? 'Press Enter to send, Shift+Enter for new line' : 'Press Enter for new line, Ctrl+Enter to send'}</p>
+              <!-- Show Token Counter -->
+              <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Show Token Counter</p>
+                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Display token usage for each response</p>
+                </div>
+                <button
+                  onclick={() => handleTokenToggle(!showTokenCounter)}
+                  aria-label="Toggle token counter"
+                  class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
+                    {showTokenCounter ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
+                >
+                  <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {showTokenCounter ? 'translate-x-5' : 'translate-x-0'}"></span>
+                </button>
               </div>
-              <button
-                onclick={() => handleEnterToSendToggle(!enterToSend)}
-                aria-label="Toggle enter to send"
-                class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
-                  {enterToSend ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
-              >
-                <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {enterToSend ? 'translate-x-5' : 'translate-x-0'}"></span>
-              </button>
+
+              <!-- Show Response Time -->
+              <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                  <p class="text-[14px] font-medium text-gray-800 dark:text-gray-200">Show Response Time</p>
+                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-0.5">Display how long each response took</p>
+                </div>
+                <button
+                  onclick={() => handleResponseTimeToggle(!showResponseTime)}
+                  aria-label="Toggle response time"
+                  class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-[#0d1117]
+                    {showResponseTime ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}"
+                >
+                  <span class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 {showResponseTime ? 'translate-x-5' : 'translate-x-0'}"></span>
+                </button>
+              </div>
             </div>
 
             <!-- Default System Prompt -->
@@ -598,7 +653,6 @@
               ></textarea>
               <p class="text-[12px] text-gray-400 dark:text-gray-500">Applied to all new conversations. Leave empty for default behavior.</p>
             </div>
-
           <!-- ═══════════════════════════════════════════ -->
           <!-- APPEARANCE TAB -->
           <!-- ═══════════════════════════════════════════ -->
@@ -606,7 +660,7 @@
 
             <!-- Theme Selector -->
             <div class="space-y-3">
-              <span class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">Theme</span>
+              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Theme</h3>
               <div class="grid grid-cols-3 gap-3">
                 {#each [
                   { id: 'light', label: 'Light', icon: '☀️' },
@@ -630,7 +684,7 @@
 
             <!-- Font Size -->
             <div class="space-y-3">
-              <span class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">Font Size</span>
+              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Font Size</h3>
               <div class="grid grid-cols-3 gap-3">
                 {#each [
                   { id: 'small', label: 'Small', preview: 'Aa', size: '13px' },
@@ -654,7 +708,7 @@
 
             <!-- Message Density -->
             <div class="space-y-3">
-              <span class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">Message Density</span>
+              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Message Density</h3>
               <div class="grid grid-cols-3 gap-3">
                 {#each [
                   { id: 'compact', label: 'Compact', desc: 'Less spacing' },
@@ -682,103 +736,127 @@
             </div>
 
           <!-- ═══════════════════════════════════════════ -->
+          <!-- SHORTCUTS TAB -->
+          <!-- ═══════════════════════════════════════════ -->
+          {:else if activeTab === 'shortcuts'}
+            <div class="h-full -mx-6 -my-5 px-6 py-5">
+              <KeybindingsTab highlightId={highlightShortcutId} />
+            </div>
+
+          <!-- ═══════════════════════════════════════════ -->
           <!-- DATA TAB -->
           <!-- ═══════════════════════════════════════════ -->
           {:else if activeTab === 'data'}
+            <div class="space-y-4">
 
-            <!-- Storage Info -->
-            <div class="bg-[#f9fafb] dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-3">
-              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Storage Usage</h3>
-              <div class="grid grid-cols-3 gap-4">
-                <div class="text-center">
-                  <p class="text-2xl font-bold text-emerald-500">{storageStats.session_count}</p>
-                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Chats</p>
-                </div>
-                <div class="text-center">
-                  <p class="text-2xl font-bold text-emerald-500">{storageStats.message_count}</p>
-                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Messages</p>
-                </div>
-                <div class="text-center">
-                  <p class="text-2xl font-bold text-emerald-500">{formatBytes(storageStats.db_size_bytes)}</p>
-                  <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Database</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Export / Import -->
-            <div class="space-y-3">
-              <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Import / Export</h3>
-              <div class="flex space-x-3">
-                <button
-                  onclick={exportAllChats}
-                  disabled={isExporting}
-                  class="flex-1 flex items-center justify-center space-x-2 py-3 px-4 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl text-[13px] font-medium text-gray-700 dark:text-gray-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
-                >
-                  {#if isExporting}
-                    <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                  {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  {/if}
-                  <span>Export All Chats</span>
-                </button>
-                <button
-                  onclick={importChats}
-                  disabled={isImporting}
-                  class="flex-1 flex items-center justify-center space-x-2 py-3 px-4 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl text-[13px] font-medium text-gray-700 dark:text-gray-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
-                >
-                  {#if isImporting}
-                    <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                  {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  {/if}
-                  <span>Import Chats</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Danger Zone -->
-            <div class="mt-4 border-2 border-red-200 dark:border-red-900/50 rounded-xl p-4 bg-red-50/50 dark:bg-red-950/10 space-y-3">
-              <div class="flex items-center space-x-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                <h3 class="text-[13px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">Danger Zone</h3>
-              </div>
-              <p class="text-[13px] text-red-600/80 dark:text-red-400/80">This will permanently delete all your chats, messages, and settings. This action cannot be undone.</p>
-              
-              {#if !showWipeConfirm}
-                <button
-                  onclick={() => showWipeConfirm = true}
-                  class="w-full py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[13px] font-semibold transition-colors"
-                >
-                  Wipe All Data
-                </button>
-              {:else}
-                <div class="space-y-2">
-                  <p class="text-[12px] text-red-500 font-medium">Type <span class="font-mono font-bold">DELETE</span> to confirm:</p>
-                  <div class="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      bind:value={wipeConfirmText}
-                      placeholder="Type DELETE"
-                      class="flex-1 bg-white dark:bg-[#0d1117] border border-red-300 dark:border-red-800 rounded-xl px-4 py-2 text-[14px] text-red-600 dark:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
-                    />
-                    <button
-                      onclick={wipeAllData}
-                      disabled={wipeConfirmText !== 'DELETE'}
-                      class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900/30 text-white rounded-xl text-[13px] font-semibold transition-colors disabled:cursor-not-allowed"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      onclick={() => { showWipeConfirm = false; wipeConfirmText = ''; }}
-                      class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl text-[13px] font-medium transition-colors hover:bg-gray-300 dark:hover:bg-gray-600"
-                    >
-                      Cancel
-                    </button>
+              <!-- Storage Info -->
+              <div class="bg-[#f9fafb] dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-3">
+                <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Storage Usage</h3>
+                <div class="grid grid-cols-3 gap-4">
+                  <div class="text-center">
+                    <p class="text-2xl font-bold text-emerald-500">{storageStats.session_count}</p>
+                    <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Chats</p>
+                  </div>
+                  <div class="text-center">
+                    <p class="text-2xl font-bold text-emerald-500">{storageStats.message_count}</p>
+                    <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Messages</p>
+                  </div>
+                  <div class="text-center">
+                    <p class="text-2xl font-bold text-emerald-500">{formatBytes(storageStats.db_size_bytes)}</p>
+                    <p class="text-[12px] text-gray-400 dark:text-gray-500 mt-1">Database</p>
                   </div>
                 </div>
-              {/if}
-            </div>
+              </div>
 
+              <!-- Export / Import -->
+              <div class="space-y-3">
+                <h3 class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Import / Export</h3>
+                <div class="flex space-x-3">
+                  <button
+                    onclick={exportAllChats}
+                    disabled={isExporting}
+                    class="flex-1 flex items-center justify-center space-x-2 py-3 px-4 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl text-[13px] font-medium text-gray-700 dark:text-gray-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
+                  >
+                    {#if isExporting}
+                      <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    {:else}
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    {/if}
+                    <span>Export All Chats</span>
+                  </button>
+                  <button
+                    onclick={importChats}
+                    disabled={isImporting}
+                    class="flex-1 flex items-center justify-center space-x-2 py-3 px-4 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl text-[13px] font-medium text-gray-700 dark:text-gray-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
+                  >
+                    {#if isImporting}
+                      <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    {:else}
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    {/if}
+                    <span>Import Chats</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Danger Zone -->
+              <div class="mt-4 border-2 border-red-200 dark:border-red-900/50 rounded-xl p-4 bg-red-50/50 dark:bg-red-950/10 space-y-3">
+                <button 
+                  onclick={() => showDangerZone = !showDangerZone}
+                  class="w-full flex items-center justify-between focus:outline-none"
+                >
+                  <div class="flex items-center space-x-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    <h3 class="text-[13px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">Danger Zone</h3>
+                  </div>
+                  {#if showDangerZone}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  {/if}
+                </button>
+                
+                {#if showDangerZone}
+                  <div class="space-y-3 pt-1">
+                    <p class="text-[13px] text-red-600/80 dark:text-red-400/80">This will permanently delete all your chats, messages, and settings. This action cannot be undone.</p>
+                    
+                    {#if !showWipeConfirm}
+                      <button
+                        onclick={() => showWipeConfirm = true}
+                        class="w-full py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[13px] font-semibold transition-colors"
+                      >
+                        Wipe All Data
+                      </button>
+                    {:else}
+                      <div class="space-y-2">
+                        <p class="text-[12px] text-red-500 font-medium">Type <span class="font-mono font-bold">DELETE</span> to confirm:</p>
+                        <div class="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            bind:value={wipeConfirmText}
+                            placeholder="Type DELETE"
+                            class="flex-1 bg-white dark:bg-[#0d1117] border border-red-300 dark:border-red-800 rounded-xl px-4 py-2 text-[14px] text-red-600 dark:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                          />
+                          <button
+                            onclick={wipeAllData}
+                            disabled={wipeConfirmText !== 'DELETE'}
+                            class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900/30 text-white rounded-xl text-[13px] font-semibold transition-colors disabled:cursor-not-allowed"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onclick={() => { showWipeConfirm = false; wipeConfirmText = ''; }}
+                            class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl text-[13px] font-medium transition-colors hover:bg-gray-300 dark:hover:bg-gray-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
           <!-- ═══════════════════════════════════════════ -->
           <!-- ABOUT TAB -->
           <!-- ═══════════════════════════════════════════ -->
@@ -801,7 +879,7 @@
             <div class="space-y-1">
               <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
                 <span class="text-[14px] text-gray-600 dark:text-gray-400">Version</span>
-                <span class="text-[14px] font-semibold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg">v0.4.0</span>
+                <span class="text-[14px] font-semibold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg">v0.5.0-beta.1</span>
               </div>
               <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
                 <span class="text-[14px] text-gray-600 dark:text-gray-400">Ollama Status</span>
@@ -829,6 +907,25 @@
                 <span class="text-[14px] font-medium text-gray-800 dark:text-gray-200">MIT</span>
               </div>
             </div>
+
+            <!-- Copy Debug Info -->
+            <button
+              onclick={() => {
+                const text = `Lume v0.5.0-beta.1\nOllama: ${ollamaConnected ? 'Connected' : 'Disconnected'}\nOllama Version: ${ollamaVersion || 'N/A'}\nRuntime: Tauri 2 + WebKit\nFramework: SvelteKit + Svelte 5\nOS: Linux`;
+                navigator.clipboard.writeText(text);
+                copied = true;
+                setTimeout(() => { copied = false; }, 2000);
+              }}
+              class="w-full flex items-center justify-center space-x-2 py-3 px-4 bg-white dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl text-[13px] font-medium text-gray-700 dark:text-gray-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
+            >
+              {#if copied}
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Copied!</span>
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                <span>Copy Debug Info</span>
+              {/if}
+            </button>
 
             <!-- GitHub Link -->
             <a
