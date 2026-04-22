@@ -39,6 +39,9 @@
   let isSystemPromptOpen = $state(false);
   let searchQuery = $state("");
   let hasUnread = $state(false);
+  let activeDropdown = $state(null);
+  let editingSessionId = $state(null);
+  let editingSessionTitle = $state("");
 
   // ── User Profile State ────────────────────────────────────────
   let userName = $state(localStorage.getItem("lume_user_name") || "User");
@@ -382,6 +385,46 @@
     }
   }
 
+  /**
+   * @param {MouseEvent | KeyboardEvent} e
+   * @param {string} sessionId
+   */
+  function renameSession(e, sessionId) {
+    e.stopPropagation();
+    const session = sessions.find((s) => s.id === sessionId);
+    if (session) {
+      editingSessionId = sessionId;
+      editingSessionTitle = session.title;
+      activeDropdown = null;
+    }
+  }
+
+  async function handleRenameConfirm() {
+    if (!editingSessionId) return;
+    const newTitle = editingSessionTitle.trim();
+    if (newTitle) {
+      try {
+        await invoke("rename_session", {
+          session_id: editingSessionId,
+          new_title: newTitle,
+        });
+        const idx = sessions.findIndex((s) => s.id === editingSessionId);
+        if (idx !== -1) {
+          sessions[idx].title = newTitle;
+        }
+      } catch (err) {
+        console.error("Failed to rename session:", err);
+      }
+    }
+    editingSessionId = null;
+  }
+
+  /** @param {HTMLInputElement} node */
+  function autoFocus(node) {
+    node.focus();
+    node.select();
+  }
+
   async function createNewChat() {
     try {
       // Pass the currently active model and temperature so the new session inherits it
@@ -457,15 +500,13 @@
    */
   async function deleteSession(e, id) {
     e.stopPropagation();
-    if (confirm("Delete this chat?")) {
-      try {
-        await invoke("delete_session", { session_id: id });
-        if (currentSessionId === id) currentSessionId = "";
-        await loadSessions();
-      } catch (err) {
-        console.error("[deleteSession]", err);
-        errorMessage = "Failed to delete: " + err;
-      }
+    try {
+      await invoke("delete_session", { session_id: id });
+      if (currentSessionId === id) currentSessionId = "";
+      await loadSessions();
+    } catch (err) {
+      console.error("[deleteSession]", err);
+      errorMessage = "Failed to delete: " + err;
     }
   }
 
@@ -690,6 +731,16 @@
     else untrack(() => shortcutStore.popScope("chat"));
   });
 
+  // Global click listener to close session dropdowns when clicking outside
+  $effect(() => {
+    if (!activeDropdown) return;
+    const handleGlobalClick = () => {
+      activeDropdown = null;
+    };
+    window.addEventListener("click", handleGlobalClick);
+    return () => window.removeEventListener("click", handleGlobalClick);
+  });
+
   onMount(() => {
     // If name not in localStorage, check legacy app_settings fallback
     if (!localStorage.getItem("lume_user_name")) {
@@ -704,6 +755,7 @@
     }
 
     // Storage listener for live user profile updates
+    /** @param {StorageEvent} e */
     const handleStorage = (e) => {
       if (!e.key || e.key === "lume_user_name") {
         userName = localStorage.getItem("lume_user_name") || "User";
@@ -1056,10 +1108,11 @@
   }
 
   async function handleClear() {
-    if (confirm("Delete all history for this session?")) {
-      await invoke("clear_messages", { session_id: currentSessionId });
-      messages = [];
-    }
+    await invoke("clear_messages", { session_id: currentSessionId });
+    messages = [];
+    await invoke("rename_session", { session_id: currentSessionId, new_title: "New Chat" });
+    const idx = sessions.findIndex((s) => s.id === currentSessionId);
+    if (idx !== -1) sessions[idx].title = "New Chat";
   }
 </script>
 
@@ -1332,13 +1385,30 @@
                     /></svg
                   >
                 {/if}
-                <span
-                  class="text-[13px] truncate leading-tight block pb-0.5 {session.id ===
-                  currentSessionId
-                    ? 'font-medium text-gray-900 dark:text-gray-100'
-                    : 'font-normal text-gray-400 dark:text-gray-500'}"
-                  >{session.title}</span
-                >
+                {#if editingSessionId === session.id}
+                  <input
+                    bind:value={editingSessionTitle}
+                    class="text-[13px] w-full bg-white dark:bg-[#1a212c] border border-emerald-500 rounded px-1.5 py-0.5 focus:outline-none text-gray-900 dark:text-gray-100 font-medium"
+                    use:autoFocus
+                    onclick={(e) => e.stopPropagation()}
+                    onkeydown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") {
+                        handleRenameConfirm();
+                      } else if (e.key === "Escape") {
+                        editingSessionId = null;
+                      }
+                    }}
+                  />
+                {:else}
+                  <span
+                    class="text-[13px] truncate leading-tight block pb-0.5 {session.id ===
+                    currentSessionId
+                      ? 'font-medium text-gray-900 dark:text-gray-100'
+                      : 'font-normal text-gray-400 dark:text-gray-500'}"
+                    >{session.title}</span
+                  >
+                {/if}
               </div>
               <div class="flex items-center space-x-2">
                 <span class="text-[11px] text-gray-500 mt-0.5"
@@ -1354,9 +1424,10 @@
               </div>
             </div>
 
-            <!-- Action buttons: Pin + Export menu + Trash (appear on hover) -->
+            <!-- Action buttons: Pin + More (appear on hover) -->
             <div
-              class="absolute right-1 flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-all"
+              class="absolute right-1 flex items-center space-x-0.5 transition-all
+                {activeDropdown === session.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
             >
               <!-- Pin button -->
               <button
@@ -1380,53 +1451,60 @@
                   /></svg
                 >
               </button>
-              <!-- Export Markdown -->
-              <button
-                onclick={(e) => {
-                  e.stopPropagation();
-                  handleExportMarkdown(session.id);
-                }}
-                class="p-1.5 text-gray-400 hover:text-emerald-500 transition-all rounded-md hover:bg-white dark:hover:bg-gray-800"
-                title="Export as Markdown"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="w-3.5 h-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  ><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-                  ></path><polyline points="7 10 12 15 17 10"></polyline><line
-                    x1="12"
-                    y1="15"
-                    x2="12"
-                    y2="3"
-                  ></line></svg
+
+              <!-- More actions menu -->
+              <div class="relative">
+                <button
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    activeDropdown = activeDropdown === session.id ? null : session.id;
+                  }}
+                  class="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all rounded-md hover:bg-white dark:hover:bg-gray-800"
+                  title="More actions"
                 >
-              </button>
-              <!-- Delete button -->
-              <button
-                onclick={(e) => deleteSession(e, session.id)}
-                class="p-1.5 text-gray-400 hover:text-red-500 transition-all rounded-md hover:bg-white dark:hover:bg-gray-800"
-                title="Delete Chat"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="w-3.5 h-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  ><polyline points="3 6 5 6 21 6"></polyline><path
-                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                  ></path></svg
-                >
-              </button>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                  </svg>
+                </button>
+
+                {#if activeDropdown === session.id}
+                  <div
+                    class="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-[#1a212c] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden"
+                    role="menu"
+                    tabindex="-1"
+                    onclick={(e) => e.stopPropagation()}
+                    onkeydown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onclick={(e) => {
+                        renameSession(e, session.id);
+                      }}
+                      class="w-full text-left px-3 py-2 text-[13px] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        handleExportMarkdown(session.id);
+                        activeDropdown = null;
+                      }}
+                      class="w-full text-left px-3 py-2 text-[13px] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors"
+                    >
+                      Export
+                    </button>
+                    <button
+                      onclick={(e) => {
+                        deleteSession(e, session.id);
+                        activeDropdown = null;
+                      }}
+                      class="w-full text-left px-3 py-2 text-[13px] text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                {/if}
+              </div>
             </div>
           {/if}
         </div>

@@ -83,6 +83,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             db::create_session,
             db::get_sessions,
+            db::rename_session,
             db::delete_session,
             db::save_message,
             db::get_messages,

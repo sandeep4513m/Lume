@@ -181,6 +181,16 @@ pub fn delete_session(state: tauri::State<DbState>, session_id: String) -> Resul
 }
 
 #[tauri::command(rename_all = "snake_case")]
+pub fn rename_session(state: tauri::State<DbState>, session_id: String, new_title: String) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    conn.execute(
+        "UPDATE sessions SET title = ?1 WHERE id = ?2",
+        (&new_title, &session_id),
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub fn save_message(state: tauri::State<DbState>, session_id: String, role: String, content: String) -> Result<String, String> {
     let conn = state.conn.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
