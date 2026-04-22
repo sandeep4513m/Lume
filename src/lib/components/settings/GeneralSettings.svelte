@@ -6,6 +6,7 @@
   let openLastChat = $state(true);
   let confirmDelete = $state(true);
   let showSaved = $state(false);
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
   let saveTimeout;
 
   const colors = [
@@ -24,11 +25,21 @@
     confirmDelete = localStorage.getItem('lume_confirm_delete') !== 'false';
   });
 
+  // Keep avatar color in sync with localStorage and notify other components immediately
+  $effect(() => {
+    if (avatarColor) {
+      localStorage.setItem('lume_user_avatar_color', avatarColor);
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'lume_user_avatar_color',
+        newValue: avatarColor
+      }));
+    }
+  });
+
   function triggerSave() {
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
       localStorage.setItem('lume_user_name', name);
-      localStorage.setItem('lume_user_avatar_color', avatarColor);
       localStorage.setItem('lume_open_last_chat', String(openLastChat));
       localStorage.setItem('lume_confirm_delete', String(confirmDelete));
       

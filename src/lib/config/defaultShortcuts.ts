@@ -60,9 +60,6 @@ const shortcuts: ShortcutDef[] = [
   def('chat', 'scroll_to_bottom',   [`${MOD}+End`],        'Scroll to Bottom',           'Navigation'),
 
   // ── Editor ──────────────────────────────────────────────────────────────
-  def('editor', 'bold',             [`${MOD}+B`],          'Bold',                       'Editing'),
-  def('editor', 'italic',           [`${MOD}+I`],          'Italic',                     'Editing'),
-  def('editor', 'code_block',       [`${MOD}+E`],          'Code Block',                 'Editing'),
   def('editor', 'undo',             [`${MOD}+Z`],          'Undo',                       'Editing'),
   def('editor', 'redo',             [`${MOD}+Shift+Z`],    'Redo',                       'Editing'),
 

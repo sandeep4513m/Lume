@@ -865,9 +865,7 @@
             <!-- App Info Card -->
             <div class="bg-[#f9fafb] dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4">
               <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/25">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                </div>
+                <img src="./src/assets/lume-icon.png" alt="Lume logo" class="w-12 h-12 rounded-xl object-contain" />
                 <div>
                   <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">Lume</h3>
                   <p class="text-[13px] text-gray-500 dark:text-gray-400">Local AI Chat Client</p>
