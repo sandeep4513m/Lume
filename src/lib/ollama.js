@@ -77,17 +77,18 @@ export function extractThink(text) {
  * @returns {Promise<{text: string, thinkText: string, evalCount: number}>} - Complete text and token count
  */
 export async function sendMessage(model, prompt, onChunk = null, signal = null, system = '') {
-  /** @type {Record<string, any>} */
+  const messages = [];
+  if (system) messages.push({ role: 'system', content: system });
+  messages.push({ role: 'user', content: prompt });
   const body = {
     model: model,
-    prompt: prompt,
+    messages: messages,
     stream: !!onChunk
   };
-  if (system) body.system = system;
 
   console.log('[ollama] Sending request:', { model, stream: body.stream, promptLength: prompt.length });
 
-  const response = await fetch(`${getBaseUrl()}/api/generate`, {
+  const response = await fetch(`${getBaseUrl()}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal: signal || undefined,
@@ -103,8 +104,8 @@ export async function sendMessage(model, prompt, onChunk = null, signal = null, 
   if (!onChunk) {
     const data = await response.json();
     // Ollama provides `thinking` natively; fall back to legacy tag parsing for older responses
-    const nativeThink = data.thinking || '';
-    const contentText = data.response || '';
+    const nativeThink = data.message?.thinking || data.thinking || '';
+    const contentText = data.message?.content || data.response || '';
     if (nativeThink) {
       return { text: contentText.trim(), thinkText: nativeThink.trim(), evalCount: data.eval_count || 0 };
     }
