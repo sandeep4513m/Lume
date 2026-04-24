@@ -10,6 +10,7 @@
   import ThinkingProcess from "../components/ThinkingProcess.svelte";
   import lumeFireLogo from "$lib/assets/lume-icon.png";
   import GovernorNotice from "../components/GovernorNotice.svelte";
+  import GovernorPanel from "../components/GovernorPanel.svelte";
   import { governor } from "$lib/stores/governor.svelte";
 
   /** @type {any[]} */
@@ -50,6 +51,7 @@
   let userAvatarColor = $state(localStorage.getItem("lume_user_avatar_color") || "#10b981");
   let isUserMenuOpen = $state(false);
   let isHeaderMenuOpen = $state(false);
+  let isGovernorOpen = $state(false);
   let isCodexOpen = $state(false);
   let userInitials = $derived(
     userName
@@ -1817,6 +1819,17 @@
             <div
               class="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#141920] border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg z-50 py-1 overflow-hidden"
             >
+              <button
+                onclick={() => {
+                  isGovernorOpen = true;
+                  isHeaderMenuOpen = false;
+                }}
+                class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <span class="mr-2 text-[14px]">🛡</span>
+                System Health
+              </button>
+              <div class="border-b border-gray-100 dark:border-gray-800"></div>
               <!-- Context Window -->
               <div class="px-4 py-2 border-b border-gray-100 dark:border-gray-800">
                 <div class="text-[11px] text-gray-400 uppercase tracking-wide mb-1">Context Window</div>
@@ -2658,6 +2671,8 @@
     loadSessions();
   }}
 />
+
+{#if isGovernorOpen}<GovernorPanel onClose={() => isGovernorOpen = false} />{/if}
 
 <!-- Governor Notice -->
 <GovernorNotice

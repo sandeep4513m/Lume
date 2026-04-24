@@ -13,6 +13,27 @@ export interface RamStatus {
   pressure: 'ok' | 'warn' | 'critical';
 }
 
+export interface HardwareTier {
+  total_ram_mb: number;
+  cpu_count: number;
+  tier: number;
+  tier_label: string;
+  max_recommended_params_b: number;
+}
+
+export interface ModelInfo {
+  name: string;
+  size: number;
+  ram_estimate_mb: number;
+}
+
+export interface LoadedModel {
+  name: string;
+  size_vram: number;
+  size: number;
+  expires_at: string;
+}
+
 export type GovernorDecision =
   | { type: 'allow' }
   | { type: 'warn';     currentModel: string; nextModel: string; ram: RamStatus }
@@ -40,6 +61,10 @@ let loadedModel = $state<string>('');
 let pendingDecision = $state<GovernorDecision | null>(null);
 let ollamaUrl = $state<string>('http://localhost:11434');
 
+let hardwareTier = $state<HardwareTier | null>(null);
+let modelList = $state<ModelInfo[]>([]);
+let loadedModels = $state<LoadedModel[]>([]);
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function calcPressure(ram: RamStatus): 'ok' | 'warn' | 'critical' {
@@ -59,6 +84,21 @@ function calcPressure(ram: RamStatus): 'ok' | 'warn' | 'critical' {
 }
 
 // ── Polling ──────────────────────────────────────────────────────────────────
+
+async function refreshModels(url: string): Promise<void> {
+  try {
+    const [hw, models, loaded] = await Promise.all([
+      invoke<HardwareTier>('get_hardware_tier'),
+      invoke<ModelInfo[]>('get_model_list_with_estimates', { ollamaUrl: url }),
+      invoke<LoadedModel[]>('get_loaded_models', { ollamaUrl: url })
+    ]);
+    hardwareTier = hw;
+    modelList = models;
+    loadedModels = loaded;
+  } catch (e) {
+    console.error('[governor] refreshModels failed:', e);
+  }
+}
 
 async function pollRam(): Promise<void> {
   try {
@@ -84,6 +124,8 @@ async function pollRam(): Promise<void> {
   } catch (e) {
     console.error('[governor] poll failed:', e);
   }
+  
+  await refreshModels(ollamaUrl);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -92,6 +134,9 @@ export const governor = {
   get ram() { return ramStatus; },
   get loadedModel() { return loadedModel; },
   get pendingDecision() { return pendingDecision; },
+  get hardwareTier() { return hardwareTier; },
+  get modelList() { return modelList; },
+  get loadedModels() { return loadedModels; },
 
   setOllamaUrl(url: string) {
     ollamaUrl = url;
@@ -101,6 +146,7 @@ export const governor = {
   init() {
     if (pollingTimer) return;
     pollRam();
+    refreshModels(ollamaUrl);
     pollingTimer = setInterval(pollRam, 5000);
   },
 
