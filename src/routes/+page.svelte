@@ -39,7 +39,9 @@
   let isSystemPromptOpen = $state(false);
   let searchQuery = $state("");
   let hasUnread = $state(false);
+  /** @type {string | null} */
   let activeDropdown = $state(null);
+  /** @type {string | null} */
   let editingSessionId = $state(null);
   let editingSessionTitle = $state("");
 
@@ -155,6 +157,8 @@
   let showScrollButton = $state(false);
   let isDarkMode = $state(false);
   let isSettingsOpen = $state(false);
+  let settingsInitialTab = $state('');
+  let settingsScrollTo = $state('');
   let searchInputRef = $state();
   let zoomFactor = $state(1.0);
   /** Shortcut ID to highlight when Settings opens to the Shortcuts tab (from Codex "Edit" button). */
@@ -1390,8 +1394,8 @@
                     bind:value={editingSessionTitle}
                     class="text-[13px] w-full bg-white dark:bg-[#1a212c] border border-emerald-500 rounded px-1.5 py-0.5 focus:outline-none text-gray-900 dark:text-gray-100 font-medium"
                     use:autoFocus
-                    onclick={(e) => e.stopPropagation()}
-                    onkeydown={(e) => {
+                    onclick={(/** @type {any} */ e) => e.stopPropagation()}
+                    onkeydown={(/** @type {any} */ e) => {
                       e.stopPropagation();
                       if (e.key === "Enter") {
                         handleRenameConfirm();
@@ -1813,6 +1817,39 @@
             <div
               class="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#141920] border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg z-50 py-1 overflow-hidden"
             >
+              <!-- Context Window -->
+              <div class="px-4 py-2 border-b border-gray-100 dark:border-gray-800">
+                <div class="text-[11px] text-gray-400 uppercase tracking-wide mb-1">Context Window</div>
+                <div class="text-[13px] font-medium text-gray-700 dark:text-gray-300">
+                  {contextTokenCount} / {activeContextSize >= 1000 ? Math.round(activeContextSize / 1024) + 'k' : activeContextSize} tokens
+                  <span class="ml-1 text-[11px] {contextColor.split(' ')[0]}">({contextPercentage}%)</span>
+                </div>
+              </div>
+              <button
+                onclick={() => {
+                  settingsInitialTab = 'chat';
+                  settingsScrollTo = 'settings-system-prompt';
+                  isSettingsOpen = true;
+                  isHeaderMenuOpen = false;
+                }}
+                class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                System Prompt
+              </button>
+              <button
+                onclick={() => {
+                  settingsInitialTab = 'models';
+                  settingsScrollTo = 'settings-temperature';
+                  isSettingsOpen = true;
+                  isHeaderMenuOpen = false;
+                }}
+                class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg>
+                Temperature
+              </button>
+              <div class="border-t border-gray-100 dark:border-gray-800"></div>
               <button
                 onclick={() => {
                   handleClear();
@@ -2156,311 +2193,6 @@
         <div
           class="absolute right-12 bottom-3 pr-3 text-sm flex items-center space-x-1"
         >
-          <!-- Context Length Indicator -->
-          <div
-            class="relative group flex items-center justify-center p-1.5 cursor-help"
-          >
-            <svg
-              class="w-[14px] h-[14px] transform -rotate-90"
-              viewBox="0 0 36 36"
-            >
-              <path
-                class="text-gray-200 dark:text-gray-700"
-                stroke-width="4"
-                stroke="currentColor"
-                fill="none"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                class={contextColor.split(" ")[0]}
-                stroke-dasharray="{contextPercentage}, 100"
-                stroke-width="4"
-                stroke-linecap="round"
-                stroke="currentColor"
-                fill="none"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
-
-            <!-- Tooltip Popover -->
-            <div
-              class="absolute bottom-[calc(100%+14px)] left-1/2 -translate-x-1/2 w-48 bg-white/90 dark:bg-[#161b22]/95 backdrop-blur-xl border border-gray-200/60 dark:border-gray-700/50 rounded-xl shadow-lg p-3 z-50 origin-bottom opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none"
-            >
-              <div
-                class="text-[12px] font-semibold text-gray-700 dark:text-gray-200 mb-1"
-              >
-                Context Window
-              </div>
-              <div class="flex items-end justify-between">
-                <span class="text-[11px] text-gray-500 font-medium"
-                  >Estimated tokens</span
-                >
-                <span
-                  class="text-[11px] font-bold {contextColor.split(
-                    ' ',
-                  )[0]} bg-transparent px-1.5 py-0.5 rounded dark:bg-black/20 bg-black/5"
-                  >{contextTokenCount} / {activeContextSize >= 1000
-                    ? Math.round(activeContextSize / 1024) + "k"
-                    : activeContextSize}</span
-                >
-              </div>
-              <div
-                class="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full mt-2 overflow-hidden relative"
-              >
-                <div
-                  class="h-full rounded-full transition-all {contextColor.split(
-                    ' ',
-                  )[1]}"
-                  style="width: {contextPercentage}%"
-                ></div>
-              </div>
-              <div
-                class="absolute bottom-[-5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-white/90 dark:bg-[#161b22]/95 border-r border-b border-gray-200/60 dark:border-gray-700/50 rotate-45"
-              ></div>
-            </div>
-          </div>
-
-          <!-- System Prompt Button -->
-          <div class="relative">
-            <button
-              type="button"
-              onclick={(e) => {
-                e.stopPropagation();
-                isSystemPromptOpen = !isSystemPromptOpen;
-                isTempMenuOpen = false;
-                isModelMenuOpen = false;
-              }}
-              class="flex items-center justify-center p-1.5 bg-transparent hover:bg-gray-200/50 dark:hover:bg-[#21262d] rounded-full transition-colors {systemPrompt
-                ? 'text-violet-500'
-                : 'text-gray-500 dark:text-gray-400'} hover:text-violet-600 dark:hover:text-violet-400"
-              title="System Prompt"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                ><path d="M12 20h9"></path><path
-                  d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
-                ></path></svg
-              >
-            </button>
-
-            {#if isSystemPromptOpen}
-              <div
-                role="dialog"
-                tabindex="0"
-                onkeydown={(e) => {
-                  if (e.key === "Escape") isSystemPromptOpen = false;
-                }}
-                onclick={(e) => e.stopPropagation()}
-                class="absolute bottom-[calc(100%+14px)] right-[-20px] w-72 bg-white/90 dark:bg-[#161b22]/95 backdrop-blur-xl border border-gray-200/60 dark:border-gray-700/50 rounded-2xl shadow-[0_12px_32px_-4px_rgba(0,0,0,0.15),0_8px_16px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_32px_-4px_rgba(0,0,0,0.5)] p-4 z-50"
-              >
-                <div class="flex items-center justify-between mb-2">
-                  <span
-                    class="text-[13px] font-semibold text-gray-700 dark:text-gray-200"
-                    >System Prompt</span
-                  >
-                  {#if systemPrompt}
-                    <button
-                      onclick={async () => {
-                        systemPrompt = "";
-                        if (currentSessionId) {
-                          try {
-                            await invoke("set_session_system_prompt", {
-                              session_id: currentSessionId,
-                              system_prompt: "",
-                            });
-                          } catch (e) {
-                            console.error("[systemPrompt] clear failed:", e);
-                          }
-                        }
-                      }}
-                      class="text-[10px] text-red-400 hover:text-red-500 font-medium uppercase tracking-wide"
-                      >Clear</button
-                    >
-                  {/if}
-                </div>
-
-                <!-- Preset Personality Chips -->
-                <div class="grid grid-cols-3 gap-1.5 mb-3">
-                  {#each PERSONALITIES as p}
-                    <button
-                      type="button"
-                      onclick={() => applyPersonality(p)}
-                      class="flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer {p.color} {systemPrompt ===
-                      p.prompt
-                        ? 'ring-2 ring-offset-1 ring-violet-400'
-                        : ''}"
-                      title={p.prompt}
-                    >
-                      <span>{p.icon}</span>
-                      <span>{p.label}</span>
-                    </button>
-                  {/each}
-                </div>
-
-                <textarea
-                  value={systemPrompt}
-                  oninput={(e) => {
-                    systemPrompt = /** @type {HTMLTextAreaElement} */ (e.target)
-                      .value;
-                  }}
-                  onblur={async () => {
-                    if (!currentSessionId) return;
-                    try {
-                      await invoke("set_session_system_prompt", {
-                        session_id: currentSessionId,
-                        system_prompt: systemPrompt,
-                      });
-                      const idx = sessions.findIndex(
-                        (s) => s.id === currentSessionId,
-                      );
-                      if (idx !== -1)
-                        sessions[idx] = {
-                          ...sessions[idx],
-                          system_prompt: systemPrompt,
-                        };
-                    } catch (err) {
-                      console.error(
-                        "[set_session_system_prompt] IPC failed:",
-                        err,
-                      );
-                      errorMessage = "Failed to save system prompt.";
-                      setTimeout(() => (errorMessage = ""), 4000);
-                    }
-                  }}
-                  placeholder="e.g. You are a helpful coding assistant..."
-                  class="w-full h-24 bg-gray-50 dark:bg-[#0d1117] border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-[12px] text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-colors"
-                ></textarea>
-                <div class="text-[10px] text-gray-400 mt-1.5">
-                  Saved on blur. Applies to this chat only.
-                </div>
-                <!-- Arrow -->
-                <div
-                  class="absolute bottom-[-5px] right-[26px] w-2.5 h-2.5 bg-white/90 dark:bg-[#161b22]/95 border-r border-b border-gray-200/60 dark:border-gray-700/50 rotate-45"
-                ></div>
-              </div>
-            {/if}
-          </div>
-
-          <!-- Temperature Selector -->
-          <div class="relative">
-            <!-- Toggler Button -->
-            <button
-              type="button"
-              onclick={(e) => {
-                e.stopPropagation();
-                isTempMenuOpen = !isTempMenuOpen;
-                isModelMenuOpen = false;
-              }}
-              class="flex items-center justify-center p-1.5 bg-transparent hover:bg-gray-200/50 dark:hover:bg-[#21262d] rounded-full transition-colors font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-              title="Adjust Temperature"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                ><path
-                  d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"
-                ></path></svg
-              >
-            </button>
-
-            <!-- Floating Menu Popover -->
-            {#if isTempMenuOpen}
-              <div
-                role="menu"
-                tabindex="0"
-                onkeydown={(e) => {
-                  if (e.key === "Escape") isTempMenuOpen = false;
-                }}
-                onclick={(e) => e.stopPropagation()}
-                class="absolute bottom-[calc(100%+14px)] right-[-30px] w-56 bg-white/90 dark:bg-[#161b22]/95 backdrop-blur-xl border border-gray-200/60 dark:border-gray-700/50 rounded-2xl shadow-[0_12px_32px_-4px_rgba(0,0,0,0.15),0_8px_16px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_32px_-4px_rgba(0,0,0,0.5)] p-4 z-50 origin-bottom animate-in fade-in zoom-in-95 duration-200"
-              >
-                <div class="flex items-center justify-between mb-3">
-                  <span
-                    class="text-[13px] font-semibold text-gray-700 dark:text-gray-200"
-                    >Temperature</span
-                  >
-                  <span
-                    class="text-[12px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-md"
-                    >{selectedTemperature.toFixed(1)}</span
-                  >
-                </div>
-
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={selectedTemperature}
-                  onchange={async (e) => {
-                    if (!currentSessionId) return;
-                    const val = parseFloat(
-                      /** @type {HTMLInputElement} */ (e.target).value,
-                    );
-
-                    try {
-                      await invoke("set_session_temperature", {
-                        session_id: currentSessionId,
-                        temperature: val,
-                      });
-                      const idx = sessions.findIndex(
-                        (s) => s.id === currentSessionId,
-                      );
-                      if (idx !== -1)
-                        sessions[idx] = { ...sessions[idx], temperature: val };
-                    } catch (err) {
-                      console.error(
-                        "[set_session_temperature] IPC failed, reverting UI:",
-                        err,
-                      );
-                      const session = sessions.find(
-                        (s) => s.id === currentSessionId,
-                      );
-                      selectedTemperature = session?.temperature ?? 0.7;
-                      errorMessage =
-                        "Failed to save temperature. Please try again.";
-                      setTimeout(() => (errorMessage = ""), 4000);
-                    }
-                  }}
-                  oninput={(e) => {
-                    selectedTemperature = parseFloat(
-                      /** @type {HTMLInputElement} */ (e.target).value,
-                    );
-                  }}
-                  class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  style="background: linear-gradient(to right, #10b981 0%, #10b981 {selectedTemperature *
-                    100}%, transparent {selectedTemperature * 100}%)"
-                />
-
-                <div
-                  class="flex justify-between w-full mt-2 text-[10px] uppercase font-bold tracking-wider text-gray-400 max-w-[250px]"
-                >
-                  <span>Precise</span>
-                  <span>Creative</span>
-                </div>
-
-                <!-- Arrow pointing down -->
-                <div
-                  class="absolute bottom-[-5px] right-[35px] w-2.5 h-2.5 bg-white/90 dark:bg-[#161b22]/95 border-r border-b border-gray-200/60 dark:border-gray-700/50 rotate-45"
-                ></div>
-              </div>
-            {/if}
-          </div>
-
           <div class="relative">
             <!-- Toggler Button -->
             <button
@@ -2901,8 +2633,10 @@
 
 <!-- Settings Modal -->
 <Settings
+  initialTab={settingsInitialTab}
+  scrollTo={settingsScrollTo}
   isOpen={isSettingsOpen}
-  onClose={() => (isSettingsOpen = false)}
+  onClose={() => { isSettingsOpen = false; settingsInitialTab = ''; settingsScrollTo = ''; }}
   {models}
   {selectedModel}
   onModelChange={(model) => handleModelChange(model)}

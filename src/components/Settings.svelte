@@ -7,6 +7,7 @@
   /** 
    * @type {{ 
    *   isOpen: boolean, 
+   *   initialTab?: string,
    *   onClose: () => void, 
    *   models: any[], 
    *   selectedModel: string, 
@@ -18,11 +19,14 @@
    *   showThinkingBlocks?: boolean,
    *   onThinkingChange?: (enabled: boolean) => void,
    *   onDataWiped: () => void,
-   *   highlightShortcutId?: string | null
+   *   highlightShortcutId?: string | null,
+   *   scrollTo?: string
    * }} 
    */
   let { 
     isOpen = false, 
+    initialTab = '',
+    scrollTo = '',
     onClose = () => {}, 
     models = [],
     selectedModel = '',
@@ -39,8 +43,20 @@
 
   // Auto-switch to Shortcuts tab when a highlightShortcutId arrives
   $effect(() => {
+    if (initialTab) activeTab = initialTab;
     if (highlightShortcutId) {
       activeTab = 'shortcuts';
+    }
+
+    if (scrollTo) {
+      setTimeout(() => {
+        const el = document.getElementById(scrollTo);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-2', 'ring-emerald-500', 'rounded-xl');
+          setTimeout(() => el.classList.remove('ring-2', 'ring-emerald-500', 'rounded-xl'), 2000);
+        }
+      }, 300);
     }
   });
 
@@ -522,7 +538,7 @@
             </div>
 
             <!-- Temperature Slider -->
-            <div class="space-y-3">
+            <div id="settings-temperature" class="space-y-3">
               <div class="flex items-center justify-between">
                 <span class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Temperature</span>
                 <span class="text-[14px] font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-0.5 rounded-lg">{temperature.toFixed(1)}</span>
@@ -642,7 +658,7 @@
             </div>
 
             <!-- Default System Prompt -->
-            <div class="space-y-2 pt-2">
+            <div id="settings-system-prompt" class="space-y-2 pt-2">
               <span class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">System Prompt</span>
               <textarea
                 bind:value={defaultSystemPrompt}
