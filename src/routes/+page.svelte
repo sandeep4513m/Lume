@@ -15,6 +15,7 @@
 
   /** @type {any[]} */
   let models = $state([]);
+  let ollamaStatus = $state(true);
   let selectedModel = $state("");
   let selectedTemperature = $state(0.7);
   let systemPrompt = $state("");
@@ -772,15 +773,28 @@
     };
     window.addEventListener("storage", handleStorage);
 
-    fetchModels().then((m) => {
-      models = m;
-      if (models.length > 0) {
+    fetchModels().then(({ models: fetchedModels, ollamaOnline }) => {
+      ollamaStatus = ollamaOnline;
+      models = fetchedModels;
+      if (!ollamaOnline) {
+        errorMessage = "";
+      } else if (models.length > 0) {
         selectedModel = models[0].name;
         errorMessage = "";
       } else {
-        errorMessage = "No models found. Is Ollama running?";
+        errorMessage = "No models found. Try: ollama pull llama3.2";
       }
     });
+
+    async function pollOllama() {
+      const { models: fetchedModels, ollamaOnline } = await fetchModels();
+      ollamaStatus = ollamaOnline;
+      if (ollamaOnline && fetchedModels.length > 0) {
+        models = fetchedModels;
+        if (!selectedModel) selectedModel = fetchedModels[0].name;
+      }
+    }
+    const ollamaPoller = setInterval(pollOllama, 5000);
 
     // Theming logic
     isDarkMode =
@@ -880,6 +894,7 @@
       window.removeEventListener("lume:open_keybinding", handleOpenKeybinding);
       window.removeEventListener("storage", handleStorage);
       cleanups.forEach((c) => c());
+      clearInterval(ollamaPoller);
     };
   });
 
@@ -1122,9 +1137,17 @@
   }
 </script>
 
-<div
-  class="flex h-screen w-full bg-white dark:bg-[#0d1117] text-gray-900 dark:text-gray-100 transition-colors duration-200 overflow-hidden"
->
+<div class="flex flex-col h-screen w-full bg-white dark:bg-[#0d1117] text-gray-900 dark:text-gray-100 transition-colors duration-200 overflow-hidden">
+
+  <!-- Ollama offline banner -->
+  {#if !ollamaStatus}
+    <div class="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/30 text-amber-600 dark:text-amber-400 text-[13px]">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>Ollama is offline — start it with <code class="font-mono bg-amber-500/10 px-1 rounded">ollama serve</code> then refresh.</span>
+    </div>
+  {/if}
+
+  <div class="flex flex-1 min-h-0 overflow-hidden">
   <!-- PREMIUM SIDEBAR -->
   <aside
     class="flex flex-col h-full bg-[#f9fafb] dark:bg-[#111822] border-r border-gray-200 dark:border-gray-800 transition-all duration-300 ease-in-out shrink-0 {isSidebarCollapsed
@@ -2649,6 +2672,7 @@
   initialTab={settingsInitialTab}
   scrollTo={settingsScrollTo}
   isOpen={isSettingsOpen}
+  onOllamaStatusChange={(online) => { ollamaStatus = online; }}
   onClose={() => { isSettingsOpen = false; settingsInitialTab = ''; settingsScrollTo = ''; }}
   {models}
   {selectedModel}
@@ -2687,3 +2711,5 @@
     governor.dismissDecision();
   }}
 />
+
+</div>

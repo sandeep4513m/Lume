@@ -6,7 +6,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue)
-![Version](https://img.shields.io/badge/Version-0.5.0-green)
+![Version](https://img.shields.io/badge/Version-0.5.5--beta-green)
 
 ---
 
@@ -82,7 +82,7 @@ Built with Tauri v2, Svelte 5, and Rust, Lume runs blisteringly fast on low-end 
 
 ### Pre-built RPM (Fedora)
 ```bash
-sudo dnf install ./lume-0.5.0-1.x86_64.rpm
+sudo dnf install ./lume-0.5.5-beta-1.x86_64.rpm
 ```
 
 ### From Source
@@ -98,7 +98,7 @@ git clone https://github.com/sandeep4513m/Lume.git
 cd Lume
 npm install
 npm run tauri dev      # Development mode with hot-reload
-npm run tauri build    # Production RPM bundle
+NO_STRIP=true npm run tauri build    # Production RPM bundle
 ```
 
 > **Note:** Ensure Ollama is installed and running before launching Lume:

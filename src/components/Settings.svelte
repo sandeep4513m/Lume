@@ -20,7 +20,8 @@
    *   onThinkingChange?: (enabled: boolean) => void,
    *   onDataWiped: () => void,
    *   highlightShortcutId?: string | null,
-   *   scrollTo?: string
+   *   scrollTo?: string,
+   *   onOllamaStatusChange?: ((online: boolean) => void) | null
    * }} 
    */
   let { 
@@ -38,7 +39,8 @@
     showThinkingBlocks = true,
     onThinkingChange = () => {},
     onDataWiped = () => {},
-    highlightShortcutId = null
+    highlightShortcutId = null,
+    onOllamaStatusChange = null
   } = $props();
 
   // Auto-switch to Shortcuts tab when a highlightShortcutId arrives
@@ -149,10 +151,12 @@
       } else {
         connectionStatus = 'failed';
         ollamaConnected = false;
+        onOllamaStatusChange?.(false);
       }
     } catch {
       connectionStatus = 'failed';
       ollamaConnected = false;
+      onOllamaStatusChange?.(false);
     }
   }
 
@@ -178,6 +182,7 @@
       const response = await fetch(`${ollamaUrl}/api/ps`);
       if (response.ok) {
         ollamaConnected = true;
+        onOllamaStatusChange?.(true);
       }
     } catch {
       // Errors will be handled by the next polling cycle
@@ -352,11 +357,14 @@
         const data = await response.json();
         ollamaVersion = data.version || 'Unknown';
         ollamaConnected = true;
+        onOllamaStatusChange?.(true);
       } else {
         ollamaConnected = false;
+        onOllamaStatusChange?.(false);
       }
     } catch {
       ollamaConnected = false;
+      onOllamaStatusChange?.(false);
     }
   }
 

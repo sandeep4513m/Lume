@@ -15,10 +15,10 @@ export async function fetchModels() {
     const response = await fetch(`${getBaseUrl()}/api/tags`);
     if (!response.ok) throw new Error('Ollama is not responding. Is it running?');
     const data = await response.json();
-    return data.models || [];
+    return { models: data.models || [], ollamaOnline: true };
   } catch (error) {
     console.error("Fetch models error:", error);
-    return [];
+    return { models: [], ollamaOnline: false };
   }
 }
 

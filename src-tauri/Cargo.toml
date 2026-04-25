@@ -1,6 +1,6 @@
 [package]
 name = "lume"
-version = "0.5.0-beta.1"
+version = "0.5.5-beta"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
