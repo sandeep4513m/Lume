@@ -86,6 +86,7 @@
   let downloadStatus = $state('idle');
   let downloadProgress = $state({ phase: '', completed: 0, total: 0, pct: 0 });
   let downloadError = $state('');
+  let downloadAbortController = $state(/** @type {AbortController | null} */ (null));
 
   // ── Chat Tab State ──
   let showTokenCounter = $state(true);
@@ -149,29 +150,38 @@
 
   async function downloadModel() {
     if (!downloadModelName.trim() || downloadStatus === 'downloading') return;
+    const controller = new AbortController();
+    downloadAbortController = controller;
     downloadStatus = 'downloading';
     downloadError = '';
     downloadProgress = { phase: 'Starting...', completed: 0, total: 0, pct: 0 };
+
     try {
       const res = await fetch(`${ollamaUrl}/api/pull`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: downloadModelName.trim(), stream: true })
+        body: JSON.stringify({ name: downloadModelName.trim(), stream: true }),
+        signal: controller.signal
       });
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
+
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No response body');
       const decoder = new TextDecoder();
       let buffer = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
+
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
@@ -182,6 +192,7 @@
             downloadProgress.pct = downloadProgress.total > 0
               ? Math.round((downloadProgress.completed / downloadProgress.total) * 100)
               : 0;
+
             if (data.status === 'success') {
               downloadStatus = 'success';
               downloadProgress.pct = 100;
@@ -197,9 +208,20 @@
         }
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       downloadStatus = 'error';
       downloadError = err instanceof Error ? err.message : 'Pull failed';
+    } finally {
+      downloadAbortController = null;
     }
+  }
+
+  function cancelDownload() {
+    downloadAbortController?.abort();
+    downloadAbortController = null;
+    downloadStatus = 'idle';
+    downloadProgress = { phase: '', completed: 0, total: 0, pct: 0 };
+    downloadError = '';
   }
   async function testConnection() {
     connectionStatus = 'testing';
@@ -643,6 +665,14 @@
                     Pull
                   {/if}
                 </button>
+                {#if downloadStatus === 'downloading'}
+                  <button
+                    onclick={cancelDownload}
+                    class="px-4 py-2.5 rounded-xl text-[13px] font-medium transition-all shrink-0 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800"
+                  >
+                    Stop
+                  </button>
+                {/if}
               </div>
               {#if downloadStatus === 'downloading' && downloadProgress.phase}
                 <div class="space-y-1.5 pt-1">
