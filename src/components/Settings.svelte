@@ -81,6 +81,12 @@
   let connectionStatus = $state(''); // '', 'testing', 'connected', 'failed'
   let defaultModel = $state('');
 
+  // ── Model Downloader State ──
+  let downloadModelName = $state('');
+  let downloadStatus = $state('idle');
+  let downloadProgress = $state({ phase: '', completed: 0, total: 0, pct: 0 });
+  let downloadError = $state('');
+
   // ── Chat Tab State ──
   let showTokenCounter = $state(true);
   let showResponseTime = $state(true);
@@ -140,6 +146,61 @@
   }
 
   // ── Models Actions ──
+
+  async function downloadModel() {
+    if (!downloadModelName.trim() || downloadStatus === 'downloading') return;
+    downloadStatus = 'downloading';
+    downloadError = '';
+    downloadProgress = { phase: 'Starting...', completed: 0, total: 0, pct: 0 };
+    try {
+      const res = await fetch(`${ollamaUrl}/api/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: downloadModelName.trim(), stream: true })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            downloadProgress.phase = data.status || downloadProgress.phase;
+            if (data.total) downloadProgress.total = data.total;
+            if (data.completed) downloadProgress.completed = data.completed;
+            downloadProgress.pct = downloadProgress.total > 0
+              ? Math.round((downloadProgress.completed / downloadProgress.total) * 100)
+              : 0;
+            if (data.status === 'success') {
+              downloadStatus = 'success';
+              downloadProgress.pct = 100;
+              downloadProgress.phase = 'Complete';
+              setTimeout(() => {
+                downloadStatus = 'idle';
+                downloadModelName = '';
+                downloadProgress = { phase: '', completed: 0, total: 0, pct: 0 };
+              }, 3000);
+              return;
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      downloadStatus = 'error';
+      downloadError = err instanceof Error ? err.message : 'Pull failed';
+    }
+  }
   async function testConnection() {
     connectionStatus = 'testing';
     try {
@@ -543,6 +604,63 @@
                 </button>
               </div>
               <p class="text-[12px] text-gray-400 dark:text-gray-500">The URL of your Ollama instance</p>
+            </div>
+
+            <!-- Model Downloader -->
+            <div class="space-y-2">
+              <span class="text-[13px] font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider block">Download Model</span>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="text"
+                  bind:value={downloadModelName}
+                  disabled={downloadStatus === 'downloading'}
+                  class="flex-1 bg-[#f9fafb] dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-[14px] text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors font-mono"
+                  placeholder="llama3.2:1b"
+                />
+                <button
+                  onclick={downloadModel}
+                  disabled={downloadStatus === 'downloading' || !downloadModelName.trim()}
+                  class="px-4 py-2.5 rounded-xl text-[13px] font-medium transition-all shrink-0
+                    {downloadStatus === 'downloading'
+                      ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                      : downloadStatus === 'success'
+                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                        : downloadStatus === 'error'
+                          ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-white border border-emerald-600'
+                    }"
+                >
+                  {#if downloadStatus === 'downloading'}
+                    <span class="flex items-center space-x-1.5">
+                      <svg class="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                      <span>Pulling...</span>
+                    </span>
+                  {:else if downloadStatus === 'success'}
+                    ✓ Done
+                  {:else if downloadStatus === 'error'}
+                    ✗ Failed
+                  {:else}
+                    Pull
+                  {/if}
+                </button>
+              </div>
+              {#if downloadStatus === 'downloading' && downloadProgress.phase}
+                <div class="space-y-1.5 pt-1">
+                  <div class="flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                    <span>{downloadProgress.phase}</span>
+                    <span>{downloadProgress.pct}% ({formatBytes(downloadProgress.completed)} / {formatBytes(downloadProgress.total)})</span>
+                  </div>
+                  <div class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-emerald-500 transition-all duration-300" style="width: {downloadProgress.pct}%"></div>
+                  </div>
+                </div>
+              {/if}
+              {#if downloadError}
+                <p class="text-[12px] text-red-500 dark:text-red-400">{downloadError}</p>
+              {/if}
+              <p class="text-[12px] text-gray-400 dark:text-gray-500">
+                Browse models at <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer" class="text-emerald-500 hover:underline">ollama.com/library</a>
+              </p>
             </div>
 
             <!-- Temperature Slider -->

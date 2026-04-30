@@ -1,0 +1,42 @@
+npm warn Unknown global config "python". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> lume@0.5.5-beta check
+> svelte-kit sync && svelte-check --tsconfig ./jsconfig.json
+
+Loading svelte-check in workspace: /home/sandeep/Lume
+Getting Svelte diagnostics...
+
+/home/sandeep/Lume/src/components/Settings.svelte:438:12
+Error: Identifier 'formatBytes' has already been declared
+https://svelte.dev/e/js_parse_error (svelte)
+  /** @param {number} bytes */
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+
+/home/sandeep/Lume/src/components/Settings.svelte:149:24
+Error: Parameter 'bytes' implicitly has an 'any' type. (js)
+  // ── Models Actions ──
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+
+/home/sandeep/Lume/src/components/Settings.svelte:171:22
+Error: 'res.body' is possibly 'null'. (js)
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+/home/sandeep/Lume/src/components/Settings.svelte:179:9
+Error: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'. (js)
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+
+/home/sandeep/Lume/src/components/Settings.svelte:206:23
+Error: 'err' is of type 'unknown'. (js)
+      downloadStatus = 'error';
+      downloadError = err.message || 'Pull failed';
+    }
+
+====================================
+svelte-check found 5 errors and 0 warnings in 1 file
