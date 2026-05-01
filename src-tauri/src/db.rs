@@ -37,6 +37,7 @@ pub fn init(app_handle: &tauri::AppHandle) -> std::result::Result<Connection, Bo
 
     // Enable foreign keys
     conn.execute("PRAGMA foreign_keys = ON;", [])?;
+    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
 
     // Create sessions table
     conn.execute(
@@ -364,9 +365,12 @@ pub fn get_storage_stats(state: tauri::State<DbState>, app_handle: tauri::AppHan
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn wipe_all_data(state: tauri::State<DbState>) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
-    conn.execute("DELETE FROM messages", []).map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM sessions", []).map_err(|e| e.to_string())?;
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM messages", []).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM sessions", []).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM app_settings", []).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     conn.execute("VACUUM", []).map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -1,8 +1,3 @@
-<!--
-  CommandPalette.svelte — Full-screen overlay command palette.
-  Mounts as portal via <svelte:body> trick — renders outside normal DOM flow.
-  Keyboard: ↑/↓ navigate, Enter fires, Escape closes.
--->
 <script lang="ts">
   import { commandStore } from '$lib/stores/commands.svelte';
   import { onMount, tick } from 'svelte';
@@ -87,6 +82,12 @@
     Actions: 'M13 10V3L4 14h7v7l9-11h-7z',
   };
 </script>
+
+<!--
+  CommandPalette.svelte — Full-screen overlay command palette.
+  Mounts as portal via <svelte:body> trick — renders outside normal DOM flow.
+  Keyboard: ↑/↓ navigate, Enter fires, Escape closes.
+-->
 
 {#if commandStore.isOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->

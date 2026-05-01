@@ -11,6 +11,7 @@
   import lumeFireLogo from "$lib/assets/lume-icon.png";
   import GovernorNotice from "../components/GovernorNotice.svelte";
   import GovernorPanel from "../components/GovernorPanel.svelte";
+  import ModelInfoCard from "../components/ModelInfoCard.svelte";
   import { governor } from "$lib/stores/governor.svelte";
 
   /** @type {any[]} */
@@ -30,6 +31,9 @@
   let currentAbortController = $state(null);
   let isStreamingEnabled = $state(true);
   let isThinkingEnabled = $state(true);
+  let showTokenCounter = $state(true);
+  let showResponseTime = $state(true);
+  let enterToSend = $state(true);
 
   // Sidebar Multi-Session State
   /** @type {any[]} */
@@ -37,8 +41,6 @@
   let currentSessionId = $state("");
   let isSidebarCollapsed = $state(false);
   let isModelMenuOpen = $state(false);
-  let isTempMenuOpen = $state(false);
-  let isSystemPromptOpen = $state(false);
   let searchQuery = $state("");
   let hasUnread = $state(false);
   /** @type {string | null} */
@@ -64,82 +66,7 @@
       .join(""),
   );
 
-  // ── Preset Personalities ────────────────────────────────────────────────
-  const PERSONALITIES = [
-    {
-      id: "coder",
-      label: "Coder",
-      icon: "⌨",
-      color:
-        "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40",
-      prompt:
-        "You are an expert software engineer. Write clean, efficient, well-commented code. Prefer concise explanations. Always provide working examples. When reviewing code, prioritize correctness, readability, and performance in that order.",
-    },
-    {
-      id: "writer",
-      label: "Writer",
-      icon: "✍",
-      color:
-        "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40",
-      prompt:
-        "You are a skilled writer and editor. Help craft compelling prose, refine language, and improve structure. Adapt your tone to the context — formal for essays, vivid for fiction, clear for technical writing. Always preserve the author's voice.",
-    },
-    {
-      id: "assistant",
-      label: "Assistant",
-      icon: "🤝",
-      color:
-        "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40",
-      prompt:
-        "You are a helpful, accurate, and concise assistant. Answer questions directly. If unsure, say so. Break complex topics into simple steps. Avoid unnecessary caveats.",
-    },
-    {
-      id: "teacher",
-      label: "Teacher",
-      icon: "📖",
-      color:
-        "bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40",
-      prompt:
-        "You are a patient, knowledgeable teacher. Explain concepts from first principles using clear analogies. Check for understanding. Adjust complexity based on the student's level. Encourage curiosity.",
-    },
-    {
-      id: "analyst",
-      label: "Analyst",
-      icon: "📊",
-      color:
-        "bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800 hover:bg-cyan-100 dark:hover:bg-cyan-900/40",
-      prompt:
-        "You are a data analyst and critical thinker. Provide structured analysis, identify patterns, and present conclusions with evidence. Be objective, quantitative where possible, and flag assumptions clearly.",
-    },
-    {
-      id: "pirate",
-      label: "Pirate",
-      icon: "☠",
-      color:
-        "bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40",
-      prompt:
-        'Ye be a salty sea pirate! Respond in full pirate dialect — "Arrr!", "Shiver me timbers!", "Avast!". Stay in character at all times, even for technical questions. Make every response an adventure on the high seas!',
-    },
-  ];
 
-  /** @param {typeof PERSONALITIES[number]} p */
-  async function applyPersonality(p) {
-    systemPrompt = p.prompt;
-    if (!currentSessionId) return;
-    try {
-      await invoke("set_session_system_prompt", {
-        session_id: currentSessionId,
-        system_prompt: p.prompt,
-      });
-      const idx = sessions.findIndex((s) => s.id === currentSessionId);
-      if (idx !== -1)
-        sessions[idx] = { ...sessions[idx], system_prompt: p.prompt };
-    } catch (err) {
-      console.error("[applyPersonality] IPC failed:", err);
-      errorMessage = "Failed to save personality.";
-      setTimeout(() => (errorMessage = ""), 4000);
-    }
-  }
 
   /** @param {string} model */
   async function handleModelChange(model) {
@@ -166,8 +93,6 @@
   let zoomFactor = $state(1.0);
   /** Shortcut ID to highlight when Settings opens to the Shortcuts tab (from Codex "Edit" button). */
   let activeShortcutId = $state("");
-  /** @type {Set<number>} - tracks which AI message indices have their think block collapsed */
-  let collapsedThinkBlocks = $state(new Set());
 
   // ── Feature 2: Model Info Card ──────────────────────────────────────────
   /** Lightweight in-memory cache: modelName → parsed info. Never hits the
@@ -248,7 +173,7 @@
           k.endsWith(".context_length"),
         );
         if (ctxKey)
-          numCtx = Math.min(4096, parseInt(data.model_info[ctxKey], 10));
+          numCtx = parseInt(data.model_info[ctxKey], 10);
       }
 
       const info = {
@@ -321,7 +246,7 @@
             k.endsWith(".context_length"),
           );
           if (ctxKey)
-            numCtx = Math.min(4096, parseInt(data.model_info[ctxKey], 10));
+            numCtx = parseInt(data.model_info[ctxKey], 10);
         }
 
         console.log("[ContextSize] fetched:", modelName, "→", numCtx);
@@ -550,69 +475,7 @@
     }
   }
 
-  /** @param {string} sessionId */
-  function handleExportPDF(sessionId) {
-    const session = sessions.find((s) => s.id === sessionId);
-    if (session?.id !== currentSessionId) {
-      loadChat(sessionId).then(() => setTimeout(window.print, 300));
-    } else {
-      window.print();
-    }
-  }
 
-  async function handleImport() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json,.md";
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        /** @type {{ title?: string, messages: Array<{role: string, content: string}> }} */
-        let data;
-        if (file.name.endsWith(".json")) {
-          data = JSON.parse(text);
-        } else {
-          // Parse markdown export back into messages
-          const lines = text.split("\n");
-          const title = lines[0].replace(/^#\s*/, "") || file.name;
-          /** @type {Array<{role: string, content: string}>} */
-          const messages = [];
-          let current = /** @type {{role:string,content:string}|null} */ (null);
-          for (const line of lines) {
-            if (line.startsWith("**You:**")) {
-              if (current) messages.push(current);
-              current = {
-                role: "user",
-                content: line.replace("**You:** ", "").trim(),
-              };
-            } else if (line.startsWith("**Lume:**")) {
-              if (current) messages.push(current);
-              current = {
-                role: "ai",
-                content: line.replace("**Lume:** ", "").trim(),
-              };
-            } else if (current && line !== "---" && line.trim()) {
-              current.content += "\n" + line;
-            }
-          }
-          if (current) messages.push(current);
-          data = { title, messages };
-        }
-        const newId = /** @type {string} */ (
-          await invoke("import_chat", {
-            title: data.title || file.name.replace(/\.[^.]+$/, ""),
-            messages: data.messages,
-          })
-        );
-        await loadSessions(newId);
-      } catch (err) {
-        errorMessage = "Import failed: " + err;
-      }
-    };
-    input.click();
-  }
 
   async function handleBulkDelete() {
     const count = selectedSessionIds.size;
@@ -794,7 +657,19 @@
         if (!selectedModel) selectedModel = fetchedModels[0].name;
       }
     }
-    const ollamaPoller = setInterval(pollOllama, 5000);
+    /** @type {any} */
+    let ollamaPoller = setInterval(pollOllama, 5000);
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(ollamaPoller);
+        ollamaPoller = null;
+      } else if (!ollamaPoller) {
+        pollOllama();
+        ollamaPoller = setInterval(pollOllama, 5000);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Theming logic
     isDarkMode =
@@ -809,6 +684,9 @@
     // Setup initial thinking blocks preference
     const savedThinking = localStorage.getItem("lume_show_thinking");
     if (savedThinking !== null) isThinkingEnabled = savedThinking === "true";
+
+    // Load Chat Settings
+    loadSettings();
 
     // Load chat sessions from database
     loadSessions();
@@ -894,9 +772,23 @@
       window.removeEventListener("lume:open_keybinding", handleOpenKeybinding);
       window.removeEventListener("storage", handleStorage);
       cleanups.forEach((c) => c());
-      clearInterval(ollamaPoller);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (ollamaPoller) clearInterval(ollamaPoller);
     };
   });
+
+  function loadSettings() {
+    showTokenCounter = localStorage.getItem('lume_show_tokens') !== 'false';
+    showResponseTime = localStorage.getItem('lume_show_response_time') !== 'false';
+    enterToSend = localStorage.getItem('lume_enter_to_send') !== 'false';
+  }
+
+  /** @param {boolean} val */
+  const handleTokenCounterToggle = (val) => { showTokenCounter = val; };
+  /** @param {boolean} val */
+  const handleResponseTimeToggle = (val) => { showResponseTime = val; };
+  /** @param {boolean} val */
+  const handleEnterToSendToggle = (val) => { enterToSend = val; };
 
   function handleScroll() {
     if (!chatContainerRef) return;
@@ -947,7 +839,7 @@
     errorMessage = "";
 
     if (!skipUserSave) {
-      messages.push({ role: "user", content: currentPrompt });
+      messages = [...messages, { role: "user", content: currentPrompt }];
       const userMsgIndex = messages.length - 1;
 
       invoke("save_message", {
@@ -964,14 +856,22 @@
     }
 
     const aiIndex = messages.length;
-    messages.push({
+    messages = [...messages, {
       role: "ai",
       content: "",
       thinkContent: "",
       isLoading: true,
       isThinkingFinished: false,
-    });
+    }];
     if (showScrollButton) hasUnread = true;
+
+    const history = messages
+      .slice(0, aiIndex)
+      .filter((m) => m.role === "user" || m.role === "ai")
+      .map((m) => ({
+        role: m.role === "ai" ? "assistant" : m.role,
+        content: m.content,
+      }));
 
     try {
       const {
@@ -980,7 +880,7 @@
         evalCount,
       } = await sendMessage(
         selectedModel,
-        currentPrompt,
+        history,
         isStreamingEnabled
           ? (chunkObj) => {
               // Always update content fields from parsed stream
@@ -1020,7 +920,6 @@
         messages[aiIndex].created_at = Date.now();
         await loadSessions();
       } catch (err) {
-        Object.seal(err);
         console.error(err);
       }
     } catch (error) {
@@ -1042,7 +941,6 @@
             messages[aiIndex].created_at = Date.now();
             await loadSessions();
           } catch (err) {
-            Object.seal(err);
             console.error(err);
           }
         } else {
@@ -2148,16 +2046,16 @@
                       </button>
                     </div>
 
-                    {#if msg.evalCount || msg.responseTime}
+                    {#if (showResponseTime && msg.responseTime) || (showTokenCounter && msg.evalCount)}
                       <div
                         class="ml-auto flex items-center space-x-2 text-[11px] text-gray-400 dark:text-gray-600 font-medium"
                       >
-                        {#if msg.responseTime}<span>{msg.responseTime}s</span
+                        {#if showResponseTime && msg.responseTime}<span>{msg.responseTime}s</span
                           >{/if}
-                        {#if msg.responseTime && msg.evalCount}<span
+                        {#if (showResponseTime && msg.responseTime) && (showTokenCounter && msg.evalCount)}<span
                             class="opacity-40">·</span
                           >{/if}
-                        {#if msg.evalCount}<span>{msg.evalCount} tokens</span
+                        {#if showTokenCounter && msg.evalCount}<span>{msg.evalCount} tokens</span
                           >{/if}
                       </div>
                     {/if}
@@ -2215,9 +2113,18 @@
           placeholder="Message Lume..."
           oninput={adjustTextareaHeight}
           onkeydown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
+            if (e.key === "Enter") {
+              if (enterToSend) {
+                if (!e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              } else {
+                if (e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }
             }
           }}
           disabled={isLoading || models.length === 0}
@@ -2236,7 +2143,6 @@
               onclick={(e) => {
                 e.stopPropagation();
                 isModelMenuOpen = !isModelMenuOpen;
-                isTempMenuOpen = false;
               }}
               disabled={models.length === 0}
               class="flex items-center space-x-1.5 px-3 py-1 bg-transparent hover:bg-gray-200/50 dark:hover:bg-[#21262d] rounded-full transition-colors font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 group"
@@ -2385,224 +2291,12 @@
                       </button>
 
                       <!-- ── Model Info Card (glassmorphism, appears on hover) ── -->
-                      {#if hoveredModel === model.name}
-                        <div
-                          class="absolute right-[calc(100%+10px)] top-0 w-52 pointer-events-none z-[60]"
-                          style="transform: translateY(min(0px, calc(100vh - 300px - var(--mouse-y, 0px))))"
-                        >
-                          <div
-                            class="bg-white/80 dark:bg-[#0d1117]/85 backdrop-blur-2xl border border-gray-200/50 dark:border-emerald-900/30 rounded-2xl shadow-[0_8px_32px_-4px_rgba(0,0,0,0.2)] dark:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.6)] p-3.5 space-y-2.5"
-                          >
-                            <!-- Header -->
-                            <div class="flex items-center space-x-2">
-                              <div
-                                class="w-7 h-7 rounded-lg bg-emerald-500/15 dark:bg-emerald-400/10 flex items-center justify-center shrink-0"
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  class="w-3.5 h-3.5 text-emerald-500"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  stroke-width="2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                  ><rect
-                                    x="3"
-                                    y="11"
-                                    width="18"
-                                    height="10"
-                                    rx="2"
-                                  ></rect><circle cx="12" cy="5" r="2"
-                                  ></circle><path d="M12 7v4"></path><line
-                                    x1="8"
-                                    y1="16"
-                                    x2="8"
-                                    y2="16"
-                                  ></line><line x1="16" y1="16" x2="16" y2="16"
-                                  ></line></svg
-                                >
-                              </div>
-                              <div class="min-w-0">
-                                <p
-                                  class="text-[12px] font-bold text-gray-800 dark:text-gray-100 truncate"
-                                >
-                                  {model.name.split(":")[0]}
-                                </p>
-                                <p
-                                  class="text-[10px] text-gray-400 dark:text-gray-500"
-                                >
-                                  {model.name.includes(":")
-                                    ? model.name.split(":")[1]
-                                    : "latest"}
-                                </p>
-                              </div>
-                            </div>
-
-                            <!-- Divider -->
-                            <div
-                              class="h-px bg-gradient-to-r from-transparent via-gray-200 dark:via-gray-700 to-transparent"
-                            ></div>
-
-                            {#if modelInfoLoading}
-                              <!-- Skeleton loader -->
-                              <div class="space-y-2 animate-pulse">
-                                <div
-                                  class="h-3 bg-gray-200 dark:bg-gray-700 rounded-full w-3/4"
-                                ></div>
-                                <div
-                                  class="h-3 bg-gray-200 dark:bg-gray-700 rounded-full w-1/2"
-                                ></div>
-                                <div
-                                  class="h-3 bg-gray-200 dark:bg-gray-700 rounded-full w-2/3"
-                                ></div>
-                              </div>
-                            {:else if modelInfo}
-                              <!-- Stats grid -->
-                              <div class="space-y-1.5">
-                                <!-- Disk size -->
-                                <div class="flex items-center justify-between">
-                                  <span
-                                    class="text-[11px] text-gray-400 dark:text-gray-500 flex items-center gap-1"
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      class="w-3 h-3"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      stroke-width="2"
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      ><ellipse cx="12" cy="5" rx="9" ry="3"
-                                      ></ellipse><path
-                                        d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"
-                                      ></path><path
-                                        d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"
-                                      ></path></svg
-                                    >
-                                    Size
-                                  </span>
-                                  <span
-                                    class="text-[12px] font-semibold text-gray-700 dark:text-gray-200"
-                                    >{modelInfo.size}</span
-                                  >
-                                </div>
-
-                                <!-- Parameters -->
-                                <div class="flex items-center justify-between">
-                                  <span
-                                    class="text-[11px] text-gray-400 dark:text-gray-500 flex items-center gap-1"
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      class="w-3 h-3"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      stroke-width="2"
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      ><circle cx="12" cy="12" r="3"
-                                      ></circle><path
-                                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-                                      ></path></svg
-                                    >
-                                    Params
-                                  </span>
-                                  <span
-                                    class="text-[12px] font-semibold text-gray-700 dark:text-gray-200"
-                                    >{modelInfo.params}</span
-                                  >
-                                </div>
-
-                                <!-- Speed tier -->
-                                <div class="flex items-center justify-between">
-                                  <span
-                                    class="text-[11px] text-gray-400 dark:text-gray-500 flex items-center gap-1"
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      class="w-3 h-3"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      stroke-width="2"
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      ><polyline
-                                        points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
-                                      ></polyline></svg
-                                    >
-                                    Speed
-                                  </span>
-                                  <!-- Speed bars -->
-                                  <div class="flex items-center gap-1">
-                                    <div class="flex gap-0.5 items-end">
-                                      {#each [1, 2, 3] as bar}
-                                        {@const tier = speedTier(
-                                          parseFloat(
-                                            (modelInfo.params || "0").replace(
-                                              /[^\d.]/g,
-                                              "",
-                                            ),
-                                          ) || 0,
-                                        )}
-                                        <div
-                                          class="w-1.5 rounded-sm {bar <=
-                                          tier.bars
-                                            ? tier.color.replace('text-', 'bg-')
-                                            : 'bg-gray-200 dark:bg-gray-700'}"
-                                          style="height: {bar * 4 + 2}px"
-                                        ></div>
-                                      {/each}
-                                    </div>
-                                    <span
-                                      class="text-[11px] font-semibold {speedTier(
-                                        parseFloat(
-                                          (modelInfo.params || '0').replace(
-                                            /[^\d.]/g,
-                                            '',
-                                          ),
-                                        ) || 0,
-                                      ).color}"
-                                      >{speedTier(
-                                        parseFloat(
-                                          (modelInfo.params || "0").replace(
-                                            /[^\d.]/g,
-                                            "",
-                                          ),
-                                        ) || 0,
-                                      ).label}</span
-                                    >
-                                  </div>
-                                </div>
-
-                                <!-- Family tag -->
-                                {#if modelInfo.family && modelInfo.family !== model.name.split(":")[0]}
-                                  <div class="pt-0.5">
-                                    <span
-                                      class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-                                    >
-                                      {modelInfo.family}
-                                    </span>
-                                  </div>
-                                {/if}
-                              </div>
-                            {:else}
-                              <p
-                                class="text-[11px] text-gray-400 dark:text-gray-500 text-center py-1"
-                              >
-                                Hover to load info…
-                              </p>
-                            {/if}
-                          </div>
-                          <!-- Arrow pointing right -->
-                          <div
-                            class="absolute right-[-5px] top-5 w-2.5 h-2.5 bg-white/80 dark:bg-[#0d1117]/85 border-r border-t border-gray-200/50 dark:border-emerald-900/30 rotate-45"
-                          ></div>
-                        </div>
-                      {/if}
+                      <ModelInfoCard
+                        {modelInfo}
+                        {modelInfoLoading}
+                        {hoveredModel}
+                        modelName={model.name}
+                      />
                     </div>
                   {/each}
                 </div>
@@ -2691,6 +2385,12 @@
   onThinkingChange={(val) => {
     isThinkingEnabled = val;
   }}
+  {showTokenCounter}
+  onTokenCounterChange={handleTokenCounterToggle}
+  {showResponseTime}
+  onResponseTimeChange={handleResponseTimeToggle}
+  {enterToSend}
+  onEnterToSendChange={handleEnterToSendToggle}
   onDataWiped={() => {
     loadSessions();
   }}
@@ -2706,8 +2406,6 @@
     if (d && d.type !== "allow") selectedModel = d.nextModel;
   }}
   onDismiss={() => {
-    const d = governor.pendingDecision;
-    if (d && d.type !== "allow") selectedModel = d.nextModel;
     governor.dismissDecision();
   }}
 />

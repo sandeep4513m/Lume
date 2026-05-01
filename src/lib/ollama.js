@@ -70,23 +70,28 @@ export function extractThink(text) {
  * answer text. No manual tag parsing is required.
  *
  * @param {string} model - The model name
- * @param {string} prompt - The user prompt
+ * @param {Array<{role: string, content: string}>} messages - The conversation history
  * @param {((chunk: {content: string, think_content: string, isThinkingFinished: boolean}) => void) | null} onChunk - Called with parsed objects
  * @param {AbortSignal | null} signal - Signal to abort the request
  * @param {string} [system] - Optional system prompt override
  * @returns {Promise<{text: string, thinkText: string, evalCount: number}>} - Complete text and token count
  */
-export async function sendMessage(model, prompt, onChunk = null, signal = null, system = '') {
-  const messages = [];
-  if (system) messages.push({ role: 'system', content: system });
-  messages.push({ role: 'user', content: prompt });
+export async function sendMessage(model, messages, onChunk = null, signal = null, system = '') {
+  const fullMessages = [...messages];
+  if (system) {
+    // Check if system message already exists, if not, prepend it
+    const hasSystem = fullMessages.some(m => m.role === 'system');
+    if (!hasSystem) {
+      fullMessages.unshift({ role: 'system', content: system });
+    }
+  }
   const body = {
     model: model,
-    messages: messages,
+    messages: fullMessages,
     stream: !!onChunk
   };
 
-  console.log('[ollama] Sending request:', { model, stream: body.stream, promptLength: prompt.length });
+  console.log('[ollama] Sending request:', { model, stream: body.stream, messageCount: fullMessages.length });
 
   const response = await fetch(`${getBaseUrl()}/api/chat`, {
     method: 'POST',

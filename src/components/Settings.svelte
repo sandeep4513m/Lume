@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { getVersion } from '@tauri-apps/api/app';
   import KeybindingsTab from '$lib/components/KeybindingsTab.svelte';
   import GeneralSettings from '$lib/components/settings/GeneralSettings.svelte';
 
@@ -18,6 +19,12 @@
    *   onStreamingChange: (enabled: boolean) => void,
    *   showThinkingBlocks?: boolean,
    *   onThinkingChange?: (enabled: boolean) => void,
+   *   showTokenCounter?: boolean,
+   *   onTokenCounterChange?: (enabled: boolean) => void,
+   *   showResponseTime?: boolean,
+   *   onResponseTimeChange?: (enabled: boolean) => void,
+   *   enterToSend?: boolean,
+   *   onEnterToSendChange?: (enabled: boolean) => void,
    *   onDataWiped: () => void,
    *   highlightShortcutId?: string | null,
    *   scrollTo?: string,
@@ -38,6 +45,12 @@
     onStreamingChange = () => {},
     showThinkingBlocks = true,
     onThinkingChange = () => {},
+    showTokenCounter = true,
+    onTokenCounterChange = () => {},
+    showResponseTime = true,
+    onResponseTimeChange = () => {},
+    enterToSend = true,
+    onEnterToSendChange = () => {},
     onDataWiped = () => {},
     highlightShortcutId = null,
     onOllamaStatusChange = null
@@ -89,10 +102,10 @@
   let downloadAbortController = $state(/** @type {AbortController | null} */ (null));
 
   // ── Chat Tab State ──
-  let showTokenCounter = $state(true);
-  let showResponseTime = $state(true);
-  let enterToSend = $state(true);
   let defaultSystemPrompt = $state('');
+
+  // Sync state with props if they change externally
+  // showTokenCounter, showResponseTime, enterToSend are now props used directly
 
   // ── Appearance Tab State ──
   let theme = $state('system');
@@ -111,10 +124,18 @@
   let ollamaVersion = $state('');
   let ollamaConnected = $state(false);
   let copied = $state(false);
+  let appVersion = $state('v0.5.5-beta');
 
   // Load settings from localStorage on mount
-  onMount(() => {
+  onMount(async () => {
     loadSettings();
+    try {
+      const v = await getVersion();
+      appVersion = `v${v}`;
+    } catch (e) {
+      console.error('Failed to get app version:', e);
+      appVersion = 'v0.5.5-beta';
+    }
   });
 
   function loadSettings() {
@@ -124,10 +145,7 @@
     defaultModel = localStorage.getItem('lume_default_model') || '';
 
     // Chat
-    // showThinkingBlocks is driven by parent props
-    showTokenCounter = localStorage.getItem('lume_show_tokens') !== 'false';
-    showResponseTime = localStorage.getItem('lume_show_response_time') !== 'false';
-    enterToSend = localStorage.getItem('lume_enter_to_send') !== 'false';
+    // showThinkingBlocks, showTokenCounter, showResponseTime, enterToSend are driven by parent props
     defaultSystemPrompt = localStorage.getItem('lume_system_prompt') || '';
 
     // Appearance
@@ -138,6 +156,9 @@
     // Fetch status
     fetchOllamaVersion();
     fetchStorageStats();
+    
+    // Apply font size
+    applyFontSize(fontSize);
   }
 
   // ── Persist helpers ──
@@ -287,19 +308,19 @@
 
   /** @param {boolean} val */
   function handleTokenToggle(val) {
-    showTokenCounter = val;
+    onTokenCounterChange(val);
     persist('lume_show_tokens', val);
   }
 
   /** @param {boolean} val */
   function handleResponseTimeToggle(val) {
-    showResponseTime = val;
+    onResponseTimeChange(val);
     persist('lume_show_response_time', val);
   }
 
   /** @param {boolean} val */
   function handleEnterToSendToggle(val) {
-    enterToSend = val;
+    onEnterToSendChange(val);
     persist('lume_enter_to_send', val);
   }
 
@@ -528,7 +549,7 @@
 
         <!-- Bottom: version badge -->
         <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-800">
-          <span class="text-[11px] text-gray-400 dark:text-gray-600 font-medium">Lume v0.5.0-beta.1</span>
+          <span class="text-[11px] text-gray-400 dark:text-gray-600 font-medium">Lume {appVersion}</span>
         </div>
       </nav>
 
@@ -1049,7 +1070,7 @@
             <div class="space-y-1">
               <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
                 <span class="text-[14px] text-gray-600 dark:text-gray-400">Version</span>
-                <span class="text-[14px] font-semibold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg">v0.5.0-beta.1</span>
+                <span class="text-[14px] font-semibold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-lg">{appVersion}</span>
               </div>
               <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
                 <span class="text-[14px] text-gray-600 dark:text-gray-400">Ollama Status</span>
@@ -1081,7 +1102,7 @@
             <!-- Copy Debug Info -->
             <button
               onclick={() => {
-                const text = `Lume v0.5.0-beta.1\nOllama: ${ollamaConnected ? 'Connected' : 'Disconnected'}\nOllama Version: ${ollamaVersion || 'N/A'}\nRuntime: Tauri 2 + WebKit\nFramework: SvelteKit + Svelte 5\nOS: Linux`;
+                const text = `Lume ${appVersion}\nOllama: ${ollamaConnected ? 'Connected' : 'Disconnected'}\nOllama Version: ${ollamaVersion || 'N/A'}\nRuntime: Tauri 2 + WebKit\nFramework: SvelteKit + Svelte 5\nOS: Linux`;
                 navigator.clipboard.writeText(text);
                 copied = true;
                 setTimeout(() => { copied = false; }, 2000);
@@ -1099,7 +1120,7 @@
 
             <!-- GitHub Link -->
             <a
-              href="https://github.com"
+              href="https://github.com/sandeep-guttula/lume"
               target="_blank"
               rel="noopener noreferrer"
               class="flex items-center justify-center space-x-2 py-3 px-4 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl text-[13px] font-medium hover:opacity-90 transition-opacity"

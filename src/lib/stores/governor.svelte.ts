@@ -162,7 +162,8 @@ export const governor = {
    */
   async checkSwitch(nextModel: string): Promise<GovernorDecision> {
     await pollRam();
-    const ram = ramStatus!;
+    if (!ramStatus) return { type: 'allow' };
+    const ram = ramStatus;
 
     // Same model or no model loaded yet → always allow silently
     if (!loadedModel || loadedModel === nextModel) {
