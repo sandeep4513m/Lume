@@ -1,5 +1,6 @@
 <script>
   import lumeFireLogo from "$lib/assets/lume-icon.png";
+  import { settingsStore } from "$lib/stores/settingsStore.svelte";
 
   /** @type {{
    *   isSidebarCollapsed: boolean,
@@ -13,7 +14,6 @@
    *   editingSessionId: string | null,
    *   editingSessionTitle: string,
    *   isUserMenuOpen: boolean,
-   *   isSettingsOpen: boolean,
    *   isCodexOpen: boolean,
    *   userName: string,
    *   userInitials: string,
@@ -43,7 +43,6 @@
     editingSessionId = $bindable(),
     editingSessionTitle = $bindable(),
     isUserMenuOpen = $bindable(),
-    isSettingsOpen = $bindable(),
     isCodexOpen = $bindable(),
     userName,
     userInitials,
@@ -347,7 +346,7 @@
         </div>
         <div class="px-1.5 pb-1">
           <button
-            onclick={() => { isSettingsOpen = true; isUserMenuOpen = false; }}
+            onclick={() => { settingsStore.setIsSettingsOpen(true); isUserMenuOpen = false; }}
             class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/6 transition-colors text-left"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="w-[15px] h-[15px] text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

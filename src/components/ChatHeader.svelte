@@ -1,13 +1,11 @@
 <script>
+  import { settingsStore } from "$lib/stores/settingsStore.svelte";
   /** @type {{
    *   sessions: any[],
    *   currentSessionId: string,
    *   isDarkMode: boolean,
    *   isHeaderMenuOpen: boolean,
    *   isGovernorOpen: boolean,
-   *   isSettingsOpen: boolean,
-   *   settingsInitialTab: string,
-   *   settingsScrollTo: string,
    *   contextTokenCount: number,
    *   activeContextSize: number,
    *   contextColor: string,
@@ -21,9 +19,6 @@
     isDarkMode,
     isHeaderMenuOpen = $bindable(),
     isGovernorOpen = $bindable(),
-    isSettingsOpen = $bindable(),
-    settingsInitialTab = $bindable(),
-    settingsScrollTo = $bindable(),
     contextTokenCount,
     activeContextSize,
     contextColor,
@@ -103,9 +98,9 @@
           </div>
           <button
             onclick={() => {
-              settingsInitialTab = 'chat';
-              settingsScrollTo = 'settings-system-prompt';
-              isSettingsOpen = true;
+              settingsStore.setSettingsInitialTab('chat');
+              settingsStore.setSettingsScrollTo('settings-system-prompt');
+              settingsStore.setIsSettingsOpen(true);
               isHeaderMenuOpen = false;
             }}
             class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-left"
@@ -115,9 +110,9 @@
           </button>
           <button
             onclick={() => {
-              settingsInitialTab = 'models';
-              settingsScrollTo = 'settings-temperature';
-              isSettingsOpen = true;
+              settingsStore.setSettingsInitialTab('models');
+              settingsStore.setSettingsScrollTo('settings-temperature');
+              settingsStore.setIsSettingsOpen(true);
               isHeaderMenuOpen = false;
             }}
             class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-left"

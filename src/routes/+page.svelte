@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { shortcutStore } from "$lib/stores/shortcuts.svelte";
+  import { settingsStore } from "$lib/stores/settingsStore.svelte";
   import { fetchModels, sendMessage, extractThink } from "$lib/ollama.js";
   import Markdown from "../components/Markdown.svelte";
   import Settings from "../components/Settings.svelte";
@@ -36,9 +37,6 @@
   let currentAbortController = $state(null);
   let isStreamingEnabled = $state(true);
   let isThinkingEnabled = $state(true);
-  let showTokenCounter = $state(true);
-  let showResponseTime = $state(true);
-  let enterToSend = $state(true);
 
   // Sidebar Multi-Session State
   /** @type {any[]} */
@@ -90,10 +88,7 @@
   let textareaRef = $state();
   let chatContainerRef = $state();
   let showScrollButton = $state(false);
-  let isDarkMode = $state(false);
-  let isSettingsOpen = $state(false);
-  let settingsInitialTab = $state('');
-  let settingsScrollTo = $state('');
+
   let searchInputRef = $state();
   let zoomFactor = $state(1.0);
   /** Shortcut ID to highlight when Settings opens to the Shortcuts tab (from Codex "Edit" button). */
@@ -677,10 +672,11 @@
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Theming logic
-    isDarkMode =
+    settingsStore.setIsDarkMode(
       window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (isDarkMode) document.body.classList.add("dark");
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    );
+    if (settingsStore.isDarkMode) document.body.classList.add("dark");
 
     // Setup initial streaming preference from localStorage
     const savedStreaming = localStorage.getItem("lume_streaming");
@@ -701,7 +697,7 @@
     function handleOpenKeybinding(e) {
       const id = /** @type {CustomEvent} */(e).detail?.id ?? null;
       activeShortcutId = id;
-      isSettingsOpen = true;
+      settingsStore.setIsSettingsOpen(true);
     }
     window.addEventListener("lume:open_keybinding", handleOpenKeybinding);
 
@@ -709,9 +705,9 @@
     const actions = {
       "global:new_chat": () => createNewChat(),
       "global:toggle_sidebar": () => { isSidebarCollapsed = !isSidebarCollapsed; },
-      "global:toggle_settings": () => { isSettingsOpen = true; },
+      "global:toggle_settings": () => { settingsStore.setIsSettingsOpen(true); },
       "global:open_codex":    () => { isCodexOpen = true; },
-      "global:open_settings": () => { isSettingsOpen = true; },
+      "global:open_settings": () => { settingsStore.setIsSettingsOpen(true); },
       "global:open_profile":  () => { isUserMenuOpen = !isUserMenuOpen; },
       "global:search": () => { searchInputRef?.focus(); },
       "global:zoom_in": () => applyZoom(zoomFactor + 0.1),
@@ -723,7 +719,7 @@
       "chat:clear_chat": chatClear,
       "chat:focus_input": () => textareaRef?.focus(),
       "chat:scroll_to_bottom": scrollToBottom,
-      "settings:close": () => { isSettingsOpen = false; },
+      "settings:close": () => { settingsStore.setIsSettingsOpen(false); },
       "editor:bold": editorBold,
       "editor:italic": editorItalic,
       "editor:code_block": editorCodeBlock,
@@ -738,7 +734,7 @@
       "lume:focus_search": actions["global:search"],
       "lume:show_shortcuts": () => { isCodexOpen = true; },
       "lume:open_codex":    () => { isCodexOpen = true; },
-      "lume:open_settings": () => { isSettingsOpen = true; },
+      "lume:open_settings": () => { settingsStore.setIsSettingsOpen(true); },
       "lume:open_profile":  () => { isUserMenuOpen = !isUserMenuOpen; },
       "lume:zoom_in": actions["global:zoom_in"],
       "lume:zoom_out": actions["global:zoom_out"],
@@ -783,17 +779,15 @@
   });
 
   function loadSettings() {
-    showTokenCounter = localStorage.getItem('lume_show_tokens') !== 'false';
-    showResponseTime = localStorage.getItem('lume_show_response_time') !== 'false';
-    enterToSend = localStorage.getItem('lume_enter_to_send') !== 'false';
+    settingsStore.loadSettings();
   }
 
   /** @param {boolean} val */
-  const handleTokenCounterToggle = (val) => { showTokenCounter = val; };
+  const handleTokenCounterToggle = (val) => { settingsStore.setShowTokenCounter(val); };
   /** @param {boolean} val */
-  const handleResponseTimeToggle = (val) => { showResponseTime = val; };
+  const handleResponseTimeToggle = (val) => { settingsStore.setShowResponseTime(val); };
   /** @param {boolean} val */
-  const handleEnterToSendToggle = (val) => { enterToSend = val; };
+  const handleEnterToSendToggle = (val) => { settingsStore.setEnterToSend(val); };
 
   function handleScroll() {
     if (!chatContainerRef) return;
@@ -1026,8 +1020,8 @@
   }
 
   function toggleTheme() {
-    isDarkMode = !isDarkMode;
-    if (isDarkMode) document.body.classList.add("dark");
+    settingsStore.setIsDarkMode(!settingsStore.isDarkMode);
+    if (settingsStore.isDarkMode) document.body.classList.add("dark");
     else document.body.classList.remove("dark");
   }
 
@@ -1061,7 +1055,6 @@
     bind:editingSessionId
     bind:editingSessionTitle
     bind:isUserMenuOpen
-    bind:isSettingsOpen
     bind:isCodexOpen
     {filteredSessions}
     {currentSessionId}
@@ -1092,12 +1085,9 @@
     <ChatHeader
       bind:isHeaderMenuOpen
       bind:isGovernorOpen
-      bind:isSettingsOpen
-      bind:settingsInitialTab
-      bind:settingsScrollTo
       {sessions}
       {currentSessionId}
-      {isDarkMode}
+      isDarkMode={settingsStore.isDarkMode}
       {contextTokenCount}
       {activeContextSize}
       {contextColor}
@@ -1114,8 +1104,8 @@
       {isLoading}
       {isThinkingEnabled}
       {copiedIndex}
-      {showResponseTime}
-      {showTokenCounter}
+      showResponseTime={settingsStore.showResponseTime}
+      showTokenCounter={settingsStore.showTokenCounter}
       onscroll={handleScroll}
       oncopy={handleCopy}
       onedit={handleEdit}
@@ -1135,7 +1125,7 @@
       {isLoading}
       {hasUnread}
       {showScrollButton}
-      {enterToSend}
+      enterToSend={settingsStore.enterToSend}
       {models}
       {currentSessionId}
       {modelInfoLoading}
@@ -1154,17 +1144,17 @@
 
 <!-- Settings Modal -->
 <Settings
-  initialTab={settingsInitialTab}
-  scrollTo={settingsScrollTo}
-  isOpen={isSettingsOpen}
+  initialTab={settingsStore.settingsInitialTab}
+  scrollTo={settingsStore.settingsScrollTo}
+  isOpen={settingsStore.isSettingsOpen}
   onOllamaStatusChange={(online) => { ollamaStatus = online; }}
-  onClose={() => { isSettingsOpen = false; settingsInitialTab = ''; settingsScrollTo = ''; }}
+  onClose={() => { settingsStore.setIsSettingsOpen(false); settingsStore.setSettingsInitialTab(''); settingsStore.setSettingsScrollTo(''); }}
   {models}
   {selectedModel}
   onModelChange={(model) => handleModelChange(model)}
-  {isDarkMode}
+  isDarkMode={settingsStore.isDarkMode}
   onThemeChange={(dark) => {
-    isDarkMode = dark;
+    settingsStore.setIsDarkMode(dark);
     if (dark) document.body.classList.add("dark");
     else document.body.classList.remove("dark");
   }}
@@ -1176,11 +1166,11 @@
   onThinkingChange={(val) => {
     isThinkingEnabled = val;
   }}
-  {showTokenCounter}
+  showTokenCounter={settingsStore.showTokenCounter}
   onTokenCounterChange={handleTokenCounterToggle}
-  {showResponseTime}
+  showResponseTime={settingsStore.showResponseTime}
   onResponseTimeChange={handleResponseTimeToggle}
-  {enterToSend}
+  enterToSend={settingsStore.enterToSend}
   onEnterToSendChange={handleEnterToSendToggle}
   onDataWiped={() => {
     loadSessions();
