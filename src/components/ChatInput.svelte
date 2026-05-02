@@ -1,6 +1,7 @@
 <script>
   import { shortcutStore } from "$lib/stores/shortcuts.svelte";
   import { modelStore } from "$lib/stores/modelStore.svelte";
+  import { sessionStore } from "$lib/stores/sessionStore.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ModelInfoCard from "./ModelInfoCard.svelte";
 
@@ -12,7 +13,6 @@
    *   showScrollButton: boolean,
    *   enterToSend: boolean,
    *   currentSessionId: string,
-   *   sessions: any[],
    *   errorMessage: string,
    *   onscrollbottom: () => void,
    *   onsend: () => void,
@@ -29,7 +29,6 @@
     showScrollButton,
     enterToSend,
     currentSessionId,
-    sessions = $bindable(),
     errorMessage = $bindable(),
     onscrollbottom,
     onsend,
@@ -196,12 +195,12 @@
                           session_id: currentSessionId,
                           model: model.name,
                         });
-                        const idx = sessions.findIndex(
-                          (s) => s.id === currentSessionId,
+                        const idx = sessionStore.sessions.findIndex(
+                          (/** @type {any} */ s) => s.id === currentSessionId,
                         );
                         if (idx !== -1)
-                          sessions[idx] = {
-                            ...sessions[idx],
+                          sessionStore.sessions[idx] = {
+                            ...sessionStore.sessions[idx],
                             model: model.name,
                           };
                       } catch (err) {

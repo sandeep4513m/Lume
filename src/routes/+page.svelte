@@ -5,6 +5,7 @@
   import { shortcutStore } from "$lib/stores/shortcuts.svelte";
   import { settingsStore } from "$lib/stores/settingsStore.svelte";
   import { modelStore } from "$lib/stores/modelStore.svelte";
+  import { sessionStore } from "$lib/stores/sessionStore.svelte";
   import { fetchModels, sendMessage, extractThink } from "$lib/ollama.js";
   import Markdown from "../components/Markdown.svelte";
   import Settings from "../components/Settings.svelte";
@@ -35,20 +36,6 @@
   let currentAbortController = $state(null);
   let isStreamingEnabled = $state(true);
   let isThinkingEnabled = $state(true);
-
-  // Sidebar Multi-Session State
-  /** @type {any[]} */
-  let sessions = $state([]);
-  let currentSessionId = $state("");
-  let isSidebarCollapsed = $state(false);
-  let searchQuery = $state("");
-  let hasUnread = $state(false);
-  /** @type {string | null} */
-  let activeDropdown = $state(null);
-  /** @type {string | null} */
-  let editingSessionId = $state(null);
-  let editingSessionTitle = $state("");
-
   // ── User Profile State ────────────────────────────────────────
   let userName = $state(localStorage.getItem("lume_user_name") || "User");
   let userAvatarColor = $state(localStorage.getItem("lume_user_avatar_color") || "#10b981");
@@ -76,12 +63,6 @@
     }
     // if warn or critical, governor.pendingDecision is set → GovernorNotice renders
   }
-
-  // Bulk select
-  let isBulkSelectMode = $state(false);
-  /** @type {Set<string>} */
-  let selectedSessionIds = $state(new Set());
-
   let textareaRef = $state();
   let chatContainerRef = $state();
   let showScrollButton = $state(false);
@@ -191,8 +172,8 @@
 
   // Derived filtered results
   let filteredSessions = $derived(
-    sessions.filter((s) =>
-      s.title.toLowerCase().includes(searchQuery.toLowerCase()),
+    sessionStore.sessions.filter((s) =>
+      s.title.toLowerCase().includes(sessionStore.searchQuery.toLowerCase()),
     ),
   );
 
@@ -290,15 +271,15 @@
   /** @param {string | null} switchToId */
   async function loadSessions(switchToId = null) {
     try {
-      sessions = await invoke("get_sessions");
-      if (sessions.length > 0) {
+      sessionStore.setSessions(await invoke("get_sessions"));
+      if (sessionStore.sessions.length > 0) {
         if (switchToId) {
           await loadChat(switchToId);
         } else if (
-          !currentSessionId ||
-          !sessions.find((s) => s.id === currentSessionId)
+          !sessionStore.currentSessionId ||
+          !sessionStore.sessions.find((s) => s.id === sessionStore.currentSessionId)
         ) {
-          await loadChat(sessions[0].id);
+          await loadChat(sessionStore.sessions[0].id);
         }
       } else {
         await createNewChat();
@@ -314,32 +295,32 @@
    */
   function renameSession(e, sessionId) {
     e.stopPropagation();
-    const session = sessions.find((s) => s.id === sessionId);
+    const session = sessionStore.sessions.find((s) => s.id === sessionId);
     if (session) {
-      editingSessionId = sessionId;
-      editingSessionTitle = session.title;
-      activeDropdown = null;
+      sessionStore.setEditingSessionId(sessionId);
+      sessionStore.setEditingSessionTitle(session.title);
+      sessionStore.setActiveDropdown(null);
     }
   }
 
   async function handleRenameConfirm() {
-    if (!editingSessionId) return;
-    const newTitle = editingSessionTitle.trim();
+    if (!sessionStore.editingSessionId) return;
+    const newTitle = sessionStore.editingSessionTitle.trim();
     if (newTitle) {
       try {
         await invoke("rename_session", {
-          session_id: editingSessionId,
+          session_id: sessionStore.editingSessionId,
           new_title: newTitle,
         });
-        const idx = sessions.findIndex((s) => s.id === editingSessionId);
+        const idx = sessionStore.sessions.findIndex((s) => s.id === sessionStore.editingSessionId);
         if (idx !== -1) {
-          sessions[idx].title = newTitle;
+          sessionStore.sessions[idx].title = newTitle;
         }
       } catch (err) {
         console.error("Failed to rename session:", err);
       }
     }
-    editingSessionId = null;
+    sessionStore.setEditingSessionId(null);
   }
 
   /** @param {HTMLInputElement} node */
@@ -357,7 +338,7 @@
         temperature: selectedTemperature,
         system_prompt: systemPrompt,
       });
-      currentSessionId = newId;
+      sessionStore.setCurrentSessionId(newId);
       messages = [];
       await loadSessions(newId);
     } catch (e) {
@@ -367,7 +348,7 @@
 
   /** @param {string} id */
   async function loadChat(id) {
-    currentSessionId = id;
+    sessionStore.setCurrentSessionId(id);
     prompt = "";
     isLoading = false;
     errorMessage = "";
@@ -393,7 +374,7 @@
 
       // Restore the model and temperature that was last used in this specific session.
       // Falls back to: localStorage default → first available model.
-      const session = sessions.find((s) => s.id === id);
+      const session = sessionStore.sessions.find((s) => s.id === id);
 
       const fallbackModel =
         localStorage.getItem("lume_default_model") ||
@@ -425,7 +406,7 @@
     e.stopPropagation();
     try {
       await invoke("delete_session", { session_id: id });
-      if (currentSessionId === id) currentSessionId = "";
+      if (sessionStore.currentSessionId === id) sessionStore.setCurrentSessionId("");
       await loadSessions();
     } catch (err) {
       console.error("[deleteSession]", err);
@@ -450,7 +431,7 @@
       const md = /** @type {string} */ (
         await invoke("export_chat_markdown", { session_id: sessionId })
       );
-      const session = sessions.find((s) => s.id === sessionId);
+      const session = sessionStore.sessions.find((s) => s.id === sessionId);
       const filename =
         (session?.title || "chat").replace(/[^a-z0-9]/gi, "_").toLowerCase() +
         ".md";
@@ -469,7 +450,7 @@
 
 
   async function handleBulkDelete() {
-    const count = selectedSessionIds.size;
+    const count = sessionStore.selectedSessionIds.size;
     if (!count) return;
     if (
       !confirm(
@@ -479,11 +460,11 @@
       return;
     try {
       await invoke("delete_sessions", {
-        session_ids: Array.from(selectedSessionIds),
+        session_ids: Array.from(sessionStore.selectedSessionIds),
       });
-      if (selectedSessionIds.has(currentSessionId)) currentSessionId = "";
-      selectedSessionIds = new Set();
-      isBulkSelectMode = false;
+      if (sessionStore.selectedSessionIds.has(sessionStore.currentSessionId)) sessionStore.setCurrentSessionId("");
+      sessionStore.setSelectedSessionIds(new Set());
+      sessionStore.setIsBulkSelectMode(false);
       await loadSessions();
     } catch (err) {
       errorMessage = "Bulk delete failed: " + err;
@@ -506,7 +487,7 @@
 
   /** @param {string} sessionId */
   function getChatWordCount(sessionId) {
-    if (sessionId !== currentSessionId) return null;
+    if (sessionId !== sessionStore.currentSessionId) return null;
     return activeSessionWordCount > 0 ? activeSessionWordCount : null;
   }
 
@@ -556,8 +537,8 @@
     if (messages.length > 0 && confirm("Clear all messages in this chat?")) {
       messages = [];
       try {
-        await invoke("delete_session", { session_id: currentSessionId });
-        currentSessionId = "";
+        await invoke("delete_session", { session_id: sessionStore.currentSessionId });
+        sessionStore.setCurrentSessionId("");
         await loadSessions();
       } catch (err) {
         console.error("Failed to delete session", err);
@@ -588,15 +569,15 @@
   function editorRedo() { document.execCommand("redo"); }
 
   $effect(() => {
-    if (currentSessionId) untrack(() => shortcutStore.pushScope("chat"));
+    if (sessionStore.currentSessionId) untrack(() => shortcutStore.pushScope("chat"));
     else untrack(() => shortcutStore.popScope("chat"));
   });
 
   // Global click listener to close session dropdowns when clicking outside
   $effect(() => {
-    if (!activeDropdown) return;
+    if (!sessionStore.activeDropdown) return;
     const handleGlobalClick = () => {
-      activeDropdown = null;
+      sessionStore.setActiveDropdown(null);
     };
     window.addEventListener("click", handleGlobalClick);
     return () => window.removeEventListener("click", handleGlobalClick);
@@ -695,7 +676,7 @@
     // ── Keyboard Shortcuts Wiring ──────────────────────────────────────────
     const actions = {
       "global:new_chat": () => createNewChat(),
-      "global:toggle_sidebar": () => { isSidebarCollapsed = !isSidebarCollapsed; },
+      "global:toggle_sidebar": () => { sessionStore.setIsSidebarCollapsed(!sessionStore.isSidebarCollapsed); },
       "global:toggle_settings": () => { settingsStore.setIsSettingsOpen(true); },
       "global:open_codex":    () => { isCodexOpen = true; },
       "global:open_settings": () => { settingsStore.setIsSettingsOpen(true); },
@@ -785,7 +766,7 @@
     const { scrollTop, scrollHeight, clientHeight } = chatContainerRef;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     showScrollButton = distanceFromBottom > 150;
-    if (!showScrollButton) hasUnread = false;
+    if (!showScrollButton) sessionStore.setHasUnread(false);
   }
 
   function scrollToBottom() {
@@ -812,7 +793,7 @@
 
   async function handleSend(skipUserSave = false) {
     if (typeof skipUserSave !== "boolean") skipUserSave = false;
-    if (!prompt.trim() || !modelStore.selectedModel || isLoading || !currentSessionId)
+    if (!prompt.trim() || !modelStore.selectedModel || isLoading || !sessionStore.currentSessionId)
       return;
 
     currentAbortController = new AbortController();
@@ -833,7 +814,7 @@
       const userMsgIndex = messages.length - 1;
 
       invoke("save_message", {
-        session_id: currentSessionId,
+        session_id: sessionStore.currentSessionId,
         role: "user",
         content: currentPrompt,
       })
@@ -853,7 +834,7 @@
       isLoading: true,
       isThinkingFinished: false,
     }];
-    if (showScrollButton) hasUnread = true;
+    if (showScrollButton) sessionStore.setHasUnread(true);
 
     const history = messages
       .slice(0, aiIndex)
@@ -902,7 +883,7 @@
           ? `<think>\n${finalThinkText}\n</think>\n\n${finalText}`
           : finalText;
         const id = await invoke("save_message", {
-          session_id: currentSessionId,
+          session_id: sessionStore.currentSessionId,
           role: "ai",
           content: rawTextForDB,
         });
@@ -923,7 +904,7 @@
               ? `<think>\n${partialThink}\n</think>\n\n${partialText}`
               : partialText;
             const id = await invoke("save_message", {
-              session_id: currentSessionId,
+              session_id: sessionStore.currentSessionId,
               role: "ai",
               content: rawTextForDB,
             });
@@ -976,7 +957,7 @@
 
     try {
       await invoke("delete_messages_after", {
-        session_id: currentSessionId,
+        session_id: sessionStore.currentSessionId,
         timestamp,
       });
       const idx = messages.findIndex((m) => m.id === msgId);
@@ -1017,11 +998,11 @@
   }
 
   async function handleClear() {
-    await invoke("clear_messages", { session_id: currentSessionId });
+    await invoke("clear_messages", { session_id: sessionStore.currentSessionId });
     messages = [];
-    await invoke("rename_session", { session_id: currentSessionId, new_title: "New Chat" });
-    const idx = sessions.findIndex((s) => s.id === currentSessionId);
-    if (idx !== -1) sessions[idx].title = "New Chat";
+    await invoke("rename_session", { session_id: sessionStore.currentSessionId, new_title: "New Chat" });
+    const idx = sessionStore.sessions.findIndex((s) => s.id === sessionStore.currentSessionId);
+    if (idx !== -1) sessionStore.sessions[idx].title = "New Chat";
   }
 </script>
 
@@ -1037,21 +1018,13 @@
 
   <div class="flex flex-1 min-h-0 overflow-hidden">
   <Sidebar
-    bind:isSidebarCollapsed
-    bind:isBulkSelectMode
-    bind:selectedSessionIds
-    bind:searchQuery
     bind:searchInputRef
-    bind:activeDropdown
-    bind:editingSessionId
-    bind:editingSessionTitle
     bind:isUserMenuOpen
     bind:isCodexOpen
     {filteredSessions}
-    {currentSessionId}
-    {userName}
-    {userInitials}
-    {userAvatarColor}
+    userName={userName}
+    userInitials={userInitials}
+    userAvatarColor={userAvatarColor}
     oncreatenewchat={createNewChat}
     onloadchat={loadChat}
     onrenamesession={renameSession}
@@ -1076,8 +1049,8 @@
     <ChatHeader
       bind:isHeaderMenuOpen
       bind:isGovernorOpen
-      {sessions}
-      {currentSessionId}
+      sessions={sessionStore.sessions}
+      currentSessionId={sessionStore.currentSessionId}
       isDarkMode={settingsStore.isDarkMode}
       {contextTokenCount}
       {activeContextSize}
@@ -1107,13 +1080,12 @@
     <ChatInput
       bind:prompt
       bind:textareaRef
-      bind:sessions
       bind:errorMessage
       {isLoading}
-      {hasUnread}
+      hasUnread={sessionStore.hasUnread}
       {showScrollButton}
       enterToSend={settingsStore.enterToSend}
-      {currentSessionId}
+      currentSessionId={sessionStore.currentSessionId}
       onscrollbottom={scrollToBottom}
       onsend={handleSend}
       onstop={handleStop}
