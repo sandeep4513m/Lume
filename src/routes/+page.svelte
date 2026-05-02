@@ -6,6 +6,7 @@
   import { settingsStore } from "$lib/stores/settingsStore.svelte";
   import { modelStore } from "$lib/stores/modelStore.svelte";
   import { sessionStore } from "$lib/stores/sessionStore.svelte";
+  import { chatStore } from "$lib/stores/chatStore.svelte";
   import { fetchModels, sendMessage, extractThink } from "$lib/ollama.js";
   import Markdown from "../components/Markdown.svelte";
   import Settings from "../components/Settings.svelte";
@@ -25,18 +26,8 @@
 
   let selectedTemperature = $state(0.7);
   let systemPrompt = $state("");
-  let prompt = $state("");
-  /** @type {any[]} */
-  let messages = $state([]);
-  let isLoading = $state(false);
-  let errorMessage = $state("");
-  let copiedIndex = $state(-1);
-
-  /** @type {AbortController | null} */
-  let currentAbortController = $state(null);
-  let isStreamingEnabled = $state(true);
-  let isThinkingEnabled = $state(true);
-  // ── User Profile State ────────────────────────────────────────
+          
+        // ── User Profile State ────────────────────────────────────────
   let userName = $state(localStorage.getItem("lume_user_name") || "User");
   let userAvatarColor = $state(localStorage.getItem("lume_user_avatar_color") || "#10b981");
   let isUserMenuOpen = $state(false);
@@ -240,7 +231,7 @@
 
   let contextTokenCount = $derived(
     Math.floor(
-      messages.reduce((acc, msg) => acc + (msg.content?.length || 0), 0) / 4,
+      chatStore.messages.reduce((acc, msg) => acc + (msg.content?.length || 0), 0) / 4,
     ),
   );
   let contextPercentage = $derived(
@@ -285,7 +276,7 @@
         await createNewChat();
       }
     } catch (e) {
-      errorMessage = "Failed to load sessions: " + e;
+      chatStore.errorMessage = "Failed to load sessions: " + e;
     }
   }
 
@@ -339,24 +330,24 @@
         system_prompt: systemPrompt,
       });
       sessionStore.setCurrentSessionId(newId);
-      messages = [];
+      chatStore.messages = [];
       await loadSessions(newId);
     } catch (e) {
-      errorMessage = "Error creating chat: " + e;
+      chatStore.errorMessage = "Error creating chat: " + e;
     }
   }
 
   /** @param {string} id */
   async function loadChat(id) {
     sessionStore.setCurrentSessionId(id);
-    prompt = "";
-    isLoading = false;
-    errorMessage = "";
+    chatStore.prompt = "";
+    chatStore.isLoading = false;
+    chatStore.errorMessage = "";
     try {
       const rawMessages = /** @type {any[]} */ (
         await invoke("get_messages", { session_id: id })
       );
-      messages = rawMessages.map((m) => {
+      chatStore.messages = rawMessages.map((m) => {
         if (m.role === "ai" && m.content) {
           const parsed = extractThink(m.content);
           if (parsed.think_content) {
@@ -394,7 +385,7 @@
       setTimeout(scrollToBottom, 100);
     } catch (e) {
       console.error("[loadChat]", e);
-      errorMessage = "Failed to load messages: " + e;
+      chatStore.errorMessage = "Failed to load messages: " + e;
     }
   }
 
@@ -410,7 +401,7 @@
       await loadSessions();
     } catch (err) {
       console.error("[deleteSession]", err);
-      errorMessage = "Failed to delete: " + err;
+      chatStore.errorMessage = "Failed to delete: " + err;
     }
   }
 
@@ -443,7 +434,7 @@
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      errorMessage = "Export failed: " + err;
+      chatStore.errorMessage = "Export failed: " + err;
     }
   }
 
@@ -467,15 +458,15 @@
       sessionStore.setIsBulkSelectMode(false);
       await loadSessions();
     } catch (err) {
-      errorMessage = "Bulk delete failed: " + err;
+      chatStore.errorMessage = "Bulk delete failed: " + err;
     }
   }
 
   let activeSessionWordCount = $state(0);
 
   $effect(() => {
-    if (!isLoading) {
-      const text = messages
+    if (!chatStore.isLoading) {
+      const text = chatStore.messages
         .filter((m) => m.role === "ai")
         .map((m) => m.content)
         .join(" ");
@@ -509,33 +500,33 @@
   }
 
   function chatRegenerate() {
-    if (messages.length > 0 && !isLoading) {
+    if (chatStore.messages.length > 0 && !chatStore.isLoading) {
       let lastUserIdx = -1;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === "user") { lastUserIdx = i; break; }
+      for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+        if (chatStore.messages[i].role === "user") { lastUserIdx = i; break; }
       }
-      if (lastUserIdx !== -1 && lastUserIdx + 1 < messages.length) {
-        handleRegenerate(messages[lastUserIdx + 1], lastUserIdx + 1);
+      if (lastUserIdx !== -1 && lastUserIdx + 1 < chatStore.messages.length) {
+        handleRegenerate(chatStore.messages[lastUserIdx + 1], lastUserIdx + 1);
       }
     }
   }
 
   function chatStop() {
-    if (isLoading && currentAbortController) currentAbortController.abort();
+    if (chatStore.isLoading && chatStore.currentAbortController) chatStore.currentAbortController.abort();
   }
 
   function chatCopyLast() {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "ai" && messages[i].content) {
-        handleCopy(messages[i].content, i);
+    for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+      if (chatStore.messages[i].role === "ai" && chatStore.messages[i].content) {
+        handleCopy(chatStore.messages[i].content, i);
         break;
       }
     }
   }
 
   async function chatClear() {
-    if (messages.length > 0 && confirm("Clear all messages in this chat?")) {
-      messages = [];
+    if (chatStore.messages.length > 0 && confirm("Clear all chatStore.messages in this chat?")) {
+      chatStore.messages = [];
       try {
         await invoke("delete_session", { session_id: sessionStore.currentSessionId });
         sessionStore.setCurrentSessionId("");
@@ -554,8 +545,8 @@
     if (!textareaRef) return;
     const start = textareaRef.selectionStart;
     const end = textareaRef.selectionEnd;
-    const selection = prompt.substring(start, end);
-    prompt = prompt.substring(0, start) + before + selection + after + prompt.substring(end);
+    const selection = chatStore.prompt.substring(start, end);
+    chatStore.prompt = chatStore.prompt.substring(0, start) + before + selection + after + chatStore.prompt.substring(end);
     setTimeout(() => {
       textareaRef.focus();
       textareaRef.setSelectionRange(start + before.length, end + before.length);
@@ -612,12 +603,12 @@
       modelStore.setOllamaStatus(ollamaOnline);
       modelStore.setModels(fetchedModels);
       if (!ollamaOnline) {
-        errorMessage = "";
+        chatStore.errorMessage = "";
       } else if (fetchedModels.length > 0) {
         modelStore.setSelectedModel(fetchedModels[0].name);
-        errorMessage = "";
+        chatStore.errorMessage = "";
       } else {
-        errorMessage = "No models found. Try: ollama pull llama3.2";
+        chatStore.errorMessage = "No models found. Try: ollama pull llama3.2";
       }
     });
 
@@ -652,11 +643,11 @@
 
     // Setup initial streaming preference from localStorage
     const savedStreaming = localStorage.getItem("lume_streaming");
-    if (savedStreaming !== null) isStreamingEnabled = savedStreaming === "true";
+    if (savedStreaming !== null) chatStore.isStreamingEnabled = savedStreaming === "true";
 
     // Setup initial thinking blocks preference
     const savedThinking = localStorage.getItem("lume_show_thinking");
-    if (savedThinking !== null) isThinkingEnabled = savedThinking === "true";
+    if (savedThinking !== null) chatStore.isThinkingEnabled = savedThinking === "true";
 
     // Load Chat Settings
     loadSettings();
@@ -779,7 +770,7 @@
   }
 
   $effect(() => {
-    if (messages.length && chatContainerRef && !showScrollButton) {
+    if (chatStore.messages.length && chatContainerRef && !showScrollButton) {
       setTimeout(() => scrollToBottom(), 50);
     }
   });
@@ -793,25 +784,25 @@
 
   async function handleSend(skipUserSave = false) {
     if (typeof skipUserSave !== "boolean") skipUserSave = false;
-    if (!prompt.trim() || !modelStore.selectedModel || isLoading || !sessionStore.currentSessionId)
+    if (!chatStore.prompt.trim() || !modelStore.selectedModel || chatStore.isLoading || !sessionStore.currentSessionId)
       return;
 
-    currentAbortController = new AbortController();
+    chatStore.currentAbortController = new AbortController();
     const startTime = Date.now();
 
-    const currentPrompt = prompt;
-    prompt = "";
+    const currentPrompt = chatStore.prompt;
+    chatStore.prompt = "";
     tick().then(() => {
       adjustTextareaHeight();
       scrollToBottom();
     });
 
-    isLoading = true;
-    errorMessage = "";
+    chatStore.isLoading = true;
+    chatStore.errorMessage = "";
 
     if (!skipUserSave) {
-      messages = [...messages, { role: "user", content: currentPrompt }];
-      const userMsgIndex = messages.length - 1;
+      chatStore.messages = [...chatStore.messages, { role: "user", content: currentPrompt }];
+      const userMsgIndex = chatStore.messages.length - 1;
 
       invoke("save_message", {
         session_id: sessionStore.currentSessionId,
@@ -819,15 +810,15 @@
         content: currentPrompt,
       })
         .then((id) => {
-          messages[userMsgIndex].id = id;
-          messages[userMsgIndex].created_at = Date.now();
+          chatStore.messages[userMsgIndex].id = id;
+          chatStore.messages[userMsgIndex].created_at = Date.now();
           loadSessions();
         })
         .catch(console.error);
     }
 
-    const aiIndex = messages.length;
-    messages = [...messages, {
+    const aiIndex = chatStore.messages.length;
+    chatStore.messages = [...chatStore.messages, {
       role: "ai",
       content: "",
       thinkContent: "",
@@ -836,7 +827,7 @@
     }];
     if (showScrollButton) sessionStore.setHasUnread(true);
 
-    const history = messages
+    const history = chatStore.messages
       .slice(0, aiIndex)
       .filter((m) => m.role === "user" || m.role === "ai")
       .map((m) => ({
@@ -852,31 +843,31 @@
       } = await sendMessage(
         modelStore.selectedModel,
         history,
-        isStreamingEnabled
+        chatStore.isStreamingEnabled
           ? (chunkObj) => {
               // Always update content fields from parsed stream
-              messages[aiIndex].content = chunkObj.content;
-              messages[aiIndex].thinkContent =
+              chatStore.messages[aiIndex].content = chunkObj.content;
+              chatStore.messages[aiIndex].thinkContent =
                 chunkObj.think_content?.trim() || "";
-              messages[aiIndex].isThinkingFinished =
+              chatStore.messages[aiIndex].isThinkingFinished =
                 chunkObj.isThinkingFinished;
               // Clear the pending state as soon as we have ANY data from the stream
-              messages[aiIndex].isLoading = false;
+              chatStore.messages[aiIndex].isLoading = false;
               if (!showScrollButton) setTimeout(scrollToBottom, 10);
             }
           : null,
-        currentAbortController.signal,
+        chatStore.currentAbortController.signal,
         systemPrompt,
       );
 
       const responseTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      messages[aiIndex].content = finalText;
-      messages[aiIndex].thinkContent = finalThinkText;
-      messages[aiIndex].isThinkingFinished = true;
-      messages[aiIndex].isLoading = false;
-      messages[aiIndex].evalCount = evalCount;
-      messages[aiIndex].responseTime = responseTime;
+      chatStore.messages[aiIndex].content = finalText;
+      chatStore.messages[aiIndex].thinkContent = finalThinkText;
+      chatStore.messages[aiIndex].isThinkingFinished = true;
+      chatStore.messages[aiIndex].isLoading = false;
+      chatStore.messages[aiIndex].evalCount = evalCount;
+      chatStore.messages[aiIndex].responseTime = responseTime;
 
       try {
         const rawTextForDB = finalThinkText
@@ -887,17 +878,17 @@
           role: "ai",
           content: rawTextForDB,
         });
-        messages[aiIndex].id = id;
-        messages[aiIndex].created_at = Date.now();
+        chatStore.messages[aiIndex].id = id;
+        chatStore.messages[aiIndex].created_at = Date.now();
         await loadSessions();
       } catch (err) {
         console.error(err);
       }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        const partialText = messages[aiIndex].content || "";
-        const partialThink = messages[aiIndex].thinkContent || "";
-        messages[aiIndex].isLoading = false;
+        const partialText = chatStore.messages[aiIndex].content || "";
+        const partialThink = chatStore.messages[aiIndex].thinkContent || "";
+        chatStore.messages[aiIndex].isLoading = false;
         if (partialText || partialThink) {
           try {
             const rawTextForDB = partialThink
@@ -908,33 +899,33 @@
               role: "ai",
               content: rawTextForDB,
             });
-            messages[aiIndex].id = id;
-            messages[aiIndex].created_at = Date.now();
+            chatStore.messages[aiIndex].id = id;
+            chatStore.messages[aiIndex].created_at = Date.now();
             await loadSessions();
           } catch (err) {
             console.error(err);
           }
         } else {
-          messages = messages.filter((_, i) => i !== aiIndex);
+          chatStore.messages = chatStore.messages.filter((_, i) => i !== aiIndex);
         }
       } else {
-        errorMessage =
+        chatStore.errorMessage =
           "Error communicating with Ollama: " +
           (error instanceof Error ? error.message : String(error));
-        messages = messages.filter((_, i) => i !== aiIndex);
-        prompt = currentPrompt;
+        chatStore.messages = chatStore.messages.filter((_, i) => i !== aiIndex);
+        chatStore.prompt = currentPrompt;
         tick().then(adjustTextareaHeight);
       }
     } finally {
-      isLoading = false;
-      currentAbortController = null;
+      chatStore.isLoading = false;
+      chatStore.currentAbortController = null;
     }
   }
 
   function handleStop() {
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
+    if (chatStore.currentAbortController) {
+      chatStore.currentAbortController.abort();
+      chatStore.currentAbortController = null;
     }
   }
 
@@ -944,14 +935,14 @@
    */
   function handleCopy(text, i) {
     navigator.clipboard.writeText(text);
-    copiedIndex = i;
-    setTimeout(() => (copiedIndex = -1), 2000);
+    chatStore.copiedIndex = i;
+    setTimeout(() => (chatStore.copiedIndex = -1), 2000);
   }
 
   /** @param {any} msg */
   async function handleEdit(msg) {
-    if (!msg.id || isLoading) return;
-    prompt = msg.content;
+    if (!msg.id || chatStore.isLoading) return;
+    chatStore.prompt = msg.content;
     const msgId = msg.id;
     const timestamp = msg.created_at;
 
@@ -960,13 +951,13 @@
         session_id: sessionStore.currentSessionId,
         timestamp,
       });
-      const idx = messages.findIndex((m) => m.id === msgId);
+      const idx = chatStore.messages.findIndex((m) => m.id === msgId);
       if (idx !== -1) {
-        messages = messages.slice(0, idx);
+        chatStore.messages = chatStore.messages.slice(0, idx);
       }
       tick().then(adjustTextareaHeight);
     } catch (e) {
-      errorMessage = "Failed to edit: " + e;
+      chatStore.errorMessage = "Failed to edit: " + e;
     }
   }
 
@@ -975,19 +966,19 @@
    * @param {number} idx
    */
   async function handleRegenerate(msg, idx) {
-    if (!msg.id || isLoading) return;
+    if (!msg.id || chatStore.isLoading) return;
 
-    const promptMsg = messages[idx - 1];
+    const promptMsg = chatStore.messages[idx - 1];
     if (!promptMsg || promptMsg.role !== "user") return;
 
-    prompt = promptMsg.content;
+    chatStore.prompt = promptMsg.content;
 
     try {
       await invoke("delete_message", { message_id: msg.id });
-      messages = messages.filter((m) => m.id !== msg.id);
+      chatStore.messages = chatStore.messages.filter((m) => m.id !== msg.id);
       await handleSend(true);
     } catch (e) {
-      errorMessage = "Failed to regenerate: " + e;
+      chatStore.errorMessage = "Failed to regenerate: " + e;
     }
   }
 
@@ -999,7 +990,7 @@
 
   async function handleClear() {
     await invoke("clear_messages", { session_id: sessionStore.currentSessionId });
-    messages = [];
+    chatStore.messages = [];
     await invoke("rename_session", { session_id: sessionStore.currentSessionId, new_title: "New Chat" });
     const idx = sessionStore.sessions.findIndex((s) => s.id === sessionStore.currentSessionId);
     if (idx !== -1) sessionStore.sessions[idx].title = "New Chat";
@@ -1063,11 +1054,6 @@
     <!-- Chat Messages View -->
     <ChatArea
       bind:chatContainerRef
-      {errorMessage}
-      {messages}
-      {isLoading}
-      {isThinkingEnabled}
-      {copiedIndex}
       showResponseTime={settingsStore.showResponseTime}
       showTokenCounter={settingsStore.showTokenCounter}
       onscroll={handleScroll}
@@ -1078,10 +1064,7 @@
 
     <!-- Input Bar -->
     <ChatInput
-      bind:prompt
       bind:textareaRef
-      bind:errorMessage
-      {isLoading}
       hasUnread={sessionStore.hasUnread}
       {showScrollButton}
       enterToSend={settingsStore.enterToSend}
@@ -1115,13 +1098,13 @@
     if (dark) document.body.classList.add("dark");
     else document.body.classList.remove("dark");
   }}
-  {isStreamingEnabled}
+  isStreamingEnabled={chatStore.isStreamingEnabled}
   onStreamingChange={(val) => {
-    isStreamingEnabled = val;
+    chatStore.isStreamingEnabled = val;
   }}
-  showThinkingBlocks={isThinkingEnabled}
+  showThinkingBlocks={chatStore.isThinkingEnabled}
   onThinkingChange={(val) => {
-    isThinkingEnabled = val;
+    chatStore.isThinkingEnabled = val;
   }}
   showTokenCounter={settingsStore.showTokenCounter}
   onTokenCounterChange={handleTokenCounterToggle}

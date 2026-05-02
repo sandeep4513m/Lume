@@ -2,18 +2,16 @@
   import { shortcutStore } from "$lib/stores/shortcuts.svelte";
   import { modelStore } from "$lib/stores/modelStore.svelte";
   import { sessionStore } from "$lib/stores/sessionStore.svelte";
+  import { chatStore } from "$lib/stores/chatStore.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ModelInfoCard from "./ModelInfoCard.svelte";
 
   /** @type {{
-   *   prompt: string,
    *   textareaRef: any,
-   *   isLoading: boolean,
    *   hasUnread: boolean,
    *   showScrollButton: boolean,
    *   enterToSend: boolean,
    *   currentSessionId: string,
-   *   errorMessage: string,
    *   onscrollbottom: () => void,
    *   onsend: () => void,
    *   onstop: () => void,
@@ -22,14 +20,11 @@
    *   onmodelchange: (name: string) => Promise<void>,
    * }} */
   let {
-    prompt = $bindable(),
     textareaRef = $bindable(),
-    isLoading,
     hasUnread,
     showScrollButton,
     enterToSend,
     currentSessionId,
-    errorMessage = $bindable(),
     onscrollbottom,
     onsend,
     onstop,
@@ -47,7 +42,7 @@
     <button
       onclick={onscrollbottom}
       class="absolute -top-14 left-1/2 -translate-x-1/2 p-2 rounded-full bg-white dark:bg-[#161b22] border border-gray-200 dark:border-gray-700 shadow-md text-emerald-500 hover:text-emerald-600 transition-all z-50 hover:shadow-lg hover:-translate-y-1"
-      class:animate-bounce={isLoading || hasUnread}
+      class:animate-bounce={chatStore.isLoading || hasUnread}
       title="Scroll to bottom"
     >
       {#if hasUnread}
@@ -77,7 +72,7 @@
       bind:this={textareaRef}
       onfocus={() => shortcutStore.pushScope("editor")}
       onblur={() => shortcutStore.popScope("editor")}
-      bind:value={prompt}
+      bind:value={chatStore.prompt}
       placeholder="Message Lume..."
       oninput={onadjusttextareaheight}
       onkeydown={(e) => {
@@ -95,7 +90,7 @@
           }
         }
       }}
-      disabled={isLoading || modelStore.models.length === 0}
+      disabled={chatStore.isLoading || modelStore.models.length === 0}
       class="flex-1 bg-[#f9fafb] dark:bg-[#161b22] text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded-3xl pl-6 pr-44 py-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 shadow-sm dark:shadow-[0_2px_10px_rgba(0,0,0,0.1)] text-[15px] resize-none overflow-y-auto min-h-[52px] max-h-[200px] transition-colors"
       rows="1"
     ></textarea>
@@ -209,9 +204,9 @@
                           err,
                         );
                         modelStore.setSelectedModel(previousModel);
-                        errorMessage =
+                        chatStore.errorMessage =
                           "Failed to save model choice. Please try again.";
-                        setTimeout(() => (errorMessage = ""), 4000);
+                        setTimeout(() => (chatStore.errorMessage = ""), 4000);
                       }
                     }}
 
@@ -273,7 +268,7 @@
       </div>
     </div>
 
-    {#if isLoading}
+    {#if chatStore.isLoading}
       <button
         onclick={onstop}
         class="absolute right-2 bottom-1.5 bg-gray-800 hover:bg-gray-700 dark:bg-gray-200 dark:hover:bg-gray-300 text-white dark:text-gray-900 rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-500 active:scale-95"
@@ -296,7 +291,7 @@
     {:else}
       <button
         onclick={() => onsend()}
-        disabled={!prompt.trim() || modelStore.models.length === 0}
+        disabled={!chatStore.prompt.trim() || modelStore.models.length === 0}
         class="absolute right-2 bottom-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-400 text-white rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:transform-none active:scale-95"
         title="Send Message"
       >

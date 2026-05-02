@@ -1,16 +1,13 @@
 <script>
   import ThinkingProcess from './ThinkingProcess.svelte';
   import Markdown from './Markdown.svelte';
+  import { chatStore } from "$lib/stores/chatStore.svelte";
 
   /** @type {{
    *   msg: any,
    *   index: number,
-   *   isLoading: boolean,
-   *   isThinkingEnabled: boolean,
-   *   copiedIndex: number | null,
    *   showResponseTime: boolean,
    *   showTokenCounter: boolean,
-   *   messages: any[],
    *   oncopy: (text: string, i: number) => void,
    *   onedit: (msg: any) => void,
    *   onregenerate: (msg: any, idx: number) => void,
@@ -18,12 +15,8 @@
   const {
     msg,
     index: i,
-    isLoading,
-    isThinkingEnabled,
-    copiedIndex,
     showResponseTime,
     showTokenCounter,
-    messages,
     oncopy,
     onedit,
     onregenerate,
@@ -35,7 +28,7 @@
     ? 'justify-end'
     : 'justify-start'} group"
 >
-  {#if msg.role === "user" && !isLoading}
+  {#if msg.role === "user" && !chatStore.isLoading}
     <!-- Edit Button for User -->
     <button
       onclick={() => onedit(msg)}
@@ -95,8 +88,8 @@
       {#if msg.thinkContent}
         <ThinkingProcess
           thinkContent={msg.thinkContent}
-          isGenerating={isLoading && i === messages.length - 1}
-          showSetting={isThinkingEnabled}
+          isGenerating={chatStore.isLoading && i === chatStore.messages.length - 1}
+          showSetting={chatStore.isThinkingEnabled}
           isThinkingFinished={msg.isThinkingFinished ?? false}
         />
       {/if}
@@ -119,7 +112,7 @@
               class="p-1.5 hover:text-emerald-500 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-[#21262d]"
               title="Copy"
             >
-              {#if copiedIndex === i}
+              {#if chatStore.copiedIndex === i}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="14"

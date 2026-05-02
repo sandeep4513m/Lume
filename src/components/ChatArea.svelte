@@ -1,13 +1,9 @@
 <script>
   import MessageBubble from "./MessageBubble.svelte";
+  import { chatStore } from "$lib/stores/chatStore.svelte";
 
   /** @type {{
    *   chatContainerRef: any,
-   *   errorMessage: string,
-   *   messages: any[],
-   *   isLoading: boolean,
-   *   isThinkingEnabled: boolean,
-   *   copiedIndex: number | null,
    *   showResponseTime: boolean,
    *   showTokenCounter: boolean,
    *   onscroll: () => void,
@@ -17,11 +13,6 @@
    * }} */
   let {
     chatContainerRef = $bindable(),
-    errorMessage,
-    messages,
-    isLoading,
-    isThinkingEnabled,
-    copiedIndex,
     showResponseTime,
     showTokenCounter,
     onscroll,
@@ -37,16 +28,16 @@
   onscroll={onscroll}
   class="flex-1 overflow-y-auto w-full p-6 space-y-6 flex flex-col scroll-smooth"
 >
-  {#if errorMessage}
+  {#if chatStore.errorMessage}
     <div
       class="max-w-3xl mx-auto w-full p-4 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 rounded-xl text-sm shadow-sm"
     >
-      {errorMessage}
+      {chatStore.errorMessage}
     </div>
   {/if}
 
   <div class="max-w-3xl mx-auto w-full flex flex-col space-y-6 pb-6">
-    {#if messages.length === 0 && !errorMessage}
+    {#if chatStore.messages.length === 0 && !chatStore.errorMessage}
       <div class="m-auto flex flex-col items-center justify-center opacity-40 pt-24">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -62,16 +53,12 @@
       </div>
     {/if}
 
-    {#each messages as msg, i}
+    {#each chatStore.messages as msg, i}
       <MessageBubble
         {msg}
         index={i}
-        {isLoading}
-        {isThinkingEnabled}
-        {copiedIndex}
-        {showResponseTime}
-        {showTokenCounter}
-        {messages}
+        showResponseTime={showResponseTime}
+        showTokenCounter={showTokenCounter}
         oncopy={oncopy}
         onedit={onedit}
         onregenerate={onregenerate}
