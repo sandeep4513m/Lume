@@ -1,5 +1,6 @@
 <script>
   import { shortcutStore } from "$lib/stores/shortcuts.svelte";
+  import { modelStore } from "$lib/stores/modelStore.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import ModelInfoCard from "./ModelInfoCard.svelte";
 
@@ -10,14 +11,8 @@
    *   hasUnread: boolean,
    *   showScrollButton: boolean,
    *   enterToSend: boolean,
-   *   models: any[],
-   *   selectedModel: string,
    *   currentSessionId: string,
    *   sessions: any[],
-   *   isModelMenuOpen: boolean,
-   *   hoveredModel: string,
-   *   modelInfo: any,
-   *   modelInfoLoading: boolean,
    *   errorMessage: string,
    *   onscrollbottom: () => void,
    *   onsend: () => void,
@@ -33,14 +28,8 @@
     hasUnread,
     showScrollButton,
     enterToSend,
-    models,
-    selectedModel = $bindable(),
     currentSessionId,
     sessions = $bindable(),
-    isModelMenuOpen = $bindable(),
-    hoveredModel = $bindable(),
-    modelInfo = $bindable(),
-    modelInfoLoading,
     errorMessage = $bindable(),
     onscrollbottom,
     onsend,
@@ -107,7 +96,7 @@
           }
         }
       }}
-      disabled={isLoading || models.length === 0}
+      disabled={isLoading || modelStore.models.length === 0}
       class="flex-1 bg-[#f9fafb] dark:bg-[#161b22] text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 rounded-3xl pl-6 pr-44 py-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 shadow-sm dark:shadow-[0_2px_10px_rgba(0,0,0,0.1)] text-[15px] resize-none overflow-y-auto min-h-[52px] max-h-[200px] transition-colors"
       rows="1"
     ></textarea>
@@ -122,18 +111,18 @@
           type="button"
           onclick={(e) => {
             e.stopPropagation();
-            isModelMenuOpen = !isModelMenuOpen;
+            modelStore.setIsModelMenuOpen(!modelStore.isModelMenuOpen);
           }}
-          disabled={models.length === 0}
+          disabled={modelStore.models.length === 0}
           class="flex items-center space-x-1.5 px-3 py-1 bg-transparent hover:bg-gray-200/50 dark:hover:bg-[#21262d] rounded-full transition-colors font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 group"
           title="Change execution model"
         >
           <span
             class="max-w-[120px] whitespace-nowrap overflow-hidden text-ellipsis text-[13px]"
           >
-            {models.length === 0
+            {modelStore.models.length === 0
               ? "Searching..."
-              : selectedModel || "Select Model"}
+              : modelStore.selectedModel || "Select Model"}
           </span>
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -152,12 +141,12 @@
         </button>
 
         <!-- Floating Menu Popover -->
-        {#if isModelMenuOpen && models.length > 0}
+        {#if modelStore.isModelMenuOpen && modelStore.models.length > 0}
           <div
             role="menu"
             tabindex="0"
             onkeydown={(e) => {
-              if (e.key === "Escape") isModelMenuOpen = false;
+              if (e.key === "Escape") modelStore.setIsModelMenuOpen(false);
             }}
             onclick={(e) => e.stopPropagation()}
             class="absolute bottom-[calc(100%+14px)] right-0 w-64 bg-white/90 dark:bg-[#161b22]/95 backdrop-blur-xl border border-gray-200/60 dark:border-gray-700/50 rounded-2xl shadow-[0_12px_32px_-4px_rgba(0,0,0,0.15),0_8px_16px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_32px_-4px_rgba(0,0,0,0.5)] p-1.5 z-50 overflow-visible origin-bottom-right"
@@ -175,17 +164,17 @@
             <div
               class="max-h-[350px] overflow-y-auto w-full custom-scrollbar"
             >
-              {#each models as model}
+              {#each modelStore.models as model}
                 <!-- Model row with info card trigger -->
                 <div
                   class="relative"
                   onmouseenter={() => {
-                    hoveredModel = model.name;
+                    modelStore.setHoveredModel(model.name);
                     onfetchmodelinfo(model.name);
                   }}
                   onmouseleave={() => {
-                    hoveredModel = "";
-                    modelInfo = null;
+                    modelStore.setHoveredModel("");
+                    modelStore.setModelInfo(null);
                   }}
                   role="none"
                 >
@@ -194,14 +183,14 @@
                     onclick={async () => {
                       if (
                         !currentSessionId ||
-                        selectedModel === model.name
+                        modelStore.selectedModel === model.name
                       ) {
-                        isModelMenuOpen = false;
+                        modelStore.setIsModelMenuOpen(false);
                         return;
                       }
-                      const previousModel = selectedModel;
+                      const previousModel = modelStore.selectedModel;
                       await onmodelchange(model.name);
-                      isModelMenuOpen = false;
+                      modelStore.setIsModelMenuOpen(false);
                       try {
                         await invoke("set_session_model", {
                           session_id: currentSessionId,
@@ -220,21 +209,21 @@
                           "[set_session_model] IPC failed, reverting UI:",
                           err,
                         );
-                        selectedModel = previousModel;
+                        modelStore.setSelectedModel(previousModel);
                         errorMessage =
                           "Failed to save model choice. Please try again.";
                         setTimeout(() => (errorMessage = ""), 4000);
                       }
                     }}
 
-                    class="w-full flex items-center justify-between text-left px-3 py-2.5 rounded-xl transition-all cursor-pointer hover:bg-gray-100/80 dark:hover:bg-[#21262d] {selectedModel ===
+                    class="w-full flex items-center justify-between text-left px-3 py-2.5 rounded-xl transition-all cursor-pointer hover:bg-gray-100/80 dark:hover:bg-[#21262d] {modelStore.selectedModel ===
                     model.name
                       ? 'bg-emerald-50 dark:bg-emerald-900/10'
                       : ''}"
                   >
                     <div class="flex flex-col min-w-0 pr-4">
                       <span
-                        class="text-[14px] font-medium {selectedModel ===
+                        class="text-[14px] font-medium {modelStore.selectedModel ===
                         model.name
                           ? 'text-emerald-700 dark:text-emerald-400'
                           : 'text-gray-700 dark:text-gray-200'} truncate"
@@ -252,7 +241,7 @@
                     </div>
 
                     <div class="shrink-0 text-emerald-500 h-4 w-4">
-                      {#if selectedModel === model.name}
+                      {#if modelStore.selectedModel === model.name}
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           width="16"
@@ -272,9 +261,9 @@
 
                   <!-- ── Model Info Card (glassmorphism, appears on hover) ── -->
                   <ModelInfoCard
-                    {modelInfo}
-                    {modelInfoLoading}
-                    {hoveredModel}
+                    modelInfo={modelStore.modelInfo}
+                    modelInfoLoading={modelStore.modelInfoLoading}
+                    hoveredModel={modelStore.hoveredModel}
                     modelName={model.name}
                   />
                 </div>
@@ -308,7 +297,7 @@
     {:else}
       <button
         onclick={() => onsend()}
-        disabled={!prompt.trim() || models.length === 0}
+        disabled={!prompt.trim() || modelStore.models.length === 0}
         class="absolute right-2 bottom-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-400 text-white rounded-full p-2 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:transform-none active:scale-95"
         title="Send Message"
       >

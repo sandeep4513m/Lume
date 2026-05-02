@@ -4,6 +4,7 @@
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { shortcutStore } from "$lib/stores/shortcuts.svelte";
   import { settingsStore } from "$lib/stores/settingsStore.svelte";
+  import { modelStore } from "$lib/stores/modelStore.svelte";
   import { fetchModels, sendMessage, extractThink } from "$lib/ollama.js";
   import Markdown from "../components/Markdown.svelte";
   import Settings from "../components/Settings.svelte";
@@ -20,10 +21,7 @@
   import ChatArea from "../components/ChatArea.svelte";
   import { governor } from "$lib/stores/governor.svelte";
 
-  /** @type {any[]} */
-  let models = $state([]);
-  let ollamaStatus = $state(true);
-  let selectedModel = $state("");
+
   let selectedTemperature = $state(0.7);
   let systemPrompt = $state("");
   let prompt = $state("");
@@ -43,7 +41,6 @@
   let sessions = $state([]);
   let currentSessionId = $state("");
   let isSidebarCollapsed = $state(false);
-  let isModelMenuOpen = $state(false);
   let searchQuery = $state("");
   let hasUnread = $state(false);
   /** @type {string | null} */
@@ -75,7 +72,7 @@
   async function handleModelChange(model) {
     const decision = await governor.checkSwitch(model);
     if (decision.type === "allow") {
-      selectedModel = model;
+      modelStore.setSelectedModel(model);
     }
     // if warn or critical, governor.pendingDecision is set → GovernorNotice renders
   }
@@ -100,12 +97,6 @@
   /** @type {Map<string, {size?: string, params?: string, speed?: string, family?: string, _numCtx?: number, _tier?: any}>} */
   const modelInfoCache = new Map();
 
-  /** @type {{size?: string, params?: string, speed?: string, family?: string, _numCtx?: number, _tier?: any} | null} */
-  let modelInfo = $state(null);
-  let modelInfoLoading = $state(false);
-  /** The model name for which the info card is currently shown */
-  let hoveredModel = $state("");
-
   /** Derive a human-readable speed tier from parameter count (B) */
   /** @param {number} billions */
   function speedTier(billions) {
@@ -122,11 +113,11 @@
   async function fetchModelInfo(name) {
     if (!name) return;
     if (modelInfoCache.has(name)) {
-      modelInfo = modelInfoCache.get(name) ?? null;
+      modelStore.setModelInfo(modelInfoCache.get(name) ?? null);
       return;
     }
-    modelInfoLoading = true;
-    modelInfo = null;
+    modelStore.setModelInfoLoading(true);
+    modelStore.setModelInfo(null);
     try {
       const ollamaUrl =
         localStorage.getItem("lume_ollama_url") || "http://localhost:11434";
@@ -153,7 +144,7 @@
       }
 
       // Disk size from the model list entry
-      const listEntry = models.find((m) => m.name === name);
+      const listEntry = modelStore.models.find((m) => m.name === name);
       const bytes = listEntry?.size ?? 0;
       const gb = bytes / 1073741824;
       const sizeStr =
@@ -189,12 +180,12 @@
       info._tier = tier;
 
       modelInfoCache.set(name, info);
-      modelInfo = info;
+      modelStore.setModelInfo(info);
     } catch {
       // Non-fatal: just show nothing
-      modelInfo = null;
+      modelStore.setModelInfo(null);
     } finally {
-      modelInfoLoading = false;
+      modelStore.setModelInfoLoading(false);
     }
   }
 
@@ -209,15 +200,15 @@
   let activeContextSize = $state(4096);
 
   $effect(() => {
-    if (!selectedModel) return;
+    if (!modelStore.selectedModel) return;
 
     // Use cached value if we've already hovered and fetched it
-    const cached = modelInfoCache.get(selectedModel);
+    const cached = modelInfoCache.get(modelStore.selectedModel);
     if (cached && cached._numCtx !== undefined) {
       activeContextSize = cached._numCtx;
       console.log(
         "[ContextSize] cache hit:",
-        selectedModel,
+        modelStore.selectedModel,
         "→",
         activeContextSize,
       );
@@ -225,7 +216,7 @@
     }
 
     // Otherwise, fetch it specifically for the sizing engine
-    const modelName = selectedModel; // capture for async closure
+    const modelName = modelStore.selectedModel; // capture for async closure
     const url =
       localStorage.getItem("lume_ollama_url") || "http://localhost:11434";
     fetch(`${url}/api/show`, {
@@ -362,7 +353,7 @@
       // Pass the currently active model and temperature so the new session inherits it
       const newId = await invoke("create_session", {
         title: "New Chat",
-        model: selectedModel,
+        model: modelStore.selectedModel,
         temperature: selectedTemperature,
         system_prompt: systemPrompt,
       });
@@ -406,11 +397,11 @@
 
       const fallbackModel =
         localStorage.getItem("lume_default_model") ||
-        (models.length > 0 ? models[0].name : "");
-      selectedModel = session?.model || fallbackModel;
+        (modelStore.models.length > 0 ? modelStore.models[0].name : "");
+      modelStore.setSelectedModel(session?.model || fallbackModel);
 
       // Governor: mark currently loaded model
-      governor.setLoaded(selectedModel);
+      governor.setLoaded(modelStore.selectedModel);
 
       const fallbackTemp = parseFloat(
         localStorage.getItem("lume_temperature") || "0.7",
@@ -637,12 +628,12 @@
     window.addEventListener("storage", handleStorage);
 
     fetchModels().then(({ models: fetchedModels, ollamaOnline }) => {
-      ollamaStatus = ollamaOnline;
-      models = fetchedModels;
+      modelStore.setOllamaStatus(ollamaOnline);
+      modelStore.setModels(fetchedModels);
       if (!ollamaOnline) {
         errorMessage = "";
-      } else if (models.length > 0) {
-        selectedModel = models[0].name;
+      } else if (fetchedModels.length > 0) {
+        modelStore.setSelectedModel(fetchedModels[0].name);
         errorMessage = "";
       } else {
         errorMessage = "No models found. Try: ollama pull llama3.2";
@@ -651,10 +642,10 @@
 
     async function pollOllama() {
       const { models: fetchedModels, ollamaOnline } = await fetchModels();
-      ollamaStatus = ollamaOnline;
+      modelStore.setOllamaStatus(ollamaOnline);
       if (ollamaOnline && fetchedModels.length > 0) {
-        models = fetchedModels;
-        if (!selectedModel) selectedModel = fetchedModels[0].name;
+        modelStore.setModels(fetchedModels);
+        if (!modelStore.selectedModel) modelStore.setSelectedModel(fetchedModels[0].name);
       }
     }
     /** @type {any} */
@@ -821,7 +812,7 @@
 
   async function handleSend(skipUserSave = false) {
     if (typeof skipUserSave !== "boolean") skipUserSave = false;
-    if (!prompt.trim() || !selectedModel || isLoading || !currentSessionId)
+    if (!prompt.trim() || !modelStore.selectedModel || isLoading || !currentSessionId)
       return;
 
     currentAbortController = new AbortController();
@@ -878,7 +869,7 @@
         thinkText: finalThinkText,
         evalCount,
       } = await sendMessage(
-        selectedModel,
+        modelStore.selectedModel,
         history,
         isStreamingEnabled
           ? (chunkObj) => {
@@ -1037,7 +1028,7 @@
 <div class="flex flex-col h-screen w-full bg-white dark:bg-[#0d1117] text-gray-900 dark:text-gray-100 transition-colors duration-200 overflow-hidden">
 
   <!-- Ollama offline banner -->
-  {#if !ollamaStatus}
+  {#if !modelStore.ollamaStatus}
     <div class="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/30 text-amber-600 dark:text-amber-400 text-[13px]">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span>Ollama is offline — start it with <code class="font-mono bg-amber-500/10 px-1 rounded">ollama serve</code> then refresh.</span>
@@ -1116,19 +1107,13 @@
     <ChatInput
       bind:prompt
       bind:textareaRef
-      bind:selectedModel
-      bind:isModelMenuOpen
-      bind:hoveredModel
-      bind:modelInfo
       bind:sessions
       bind:errorMessage
       {isLoading}
       {hasUnread}
       {showScrollButton}
       enterToSend={settingsStore.enterToSend}
-      {models}
       {currentSessionId}
-      {modelInfoLoading}
       onscrollbottom={scrollToBottom}
       onsend={handleSend}
       onstop={handleStop}
@@ -1147,10 +1132,10 @@
   initialTab={settingsStore.settingsInitialTab}
   scrollTo={settingsStore.settingsScrollTo}
   isOpen={settingsStore.isSettingsOpen}
-  onOllamaStatusChange={(online) => { ollamaStatus = online; }}
+  onOllamaStatusChange={(online) => { modelStore.setOllamaStatus(online); }}
   onClose={() => { settingsStore.setIsSettingsOpen(false); settingsStore.setSettingsInitialTab(''); settingsStore.setSettingsScrollTo(''); }}
-  {models}
-  {selectedModel}
+  models={modelStore.models}
+  selectedModel={modelStore.selectedModel}
   onModelChange={(model) => handleModelChange(model)}
   isDarkMode={settingsStore.isDarkMode}
   onThemeChange={(dark) => {
@@ -1184,7 +1169,7 @@
   onConfirm={async () => {
     const d = governor.pendingDecision;
     await governor.confirmSwitch();
-    if (d && d.type !== "allow") selectedModel = d.nextModel;
+    if (d && d.type !== "allow") modelStore.setSelectedModel(d.nextModel);
   }}
   onDismiss={() => {
     governor.dismissDecision();
